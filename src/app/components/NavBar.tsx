@@ -10,6 +10,7 @@ const NAV_LINKS = [
   { label: 'Build',       path: '/build-fighter' },
   { label: 'Host',        path: '/host-tournament' },
   { label: 'Leaderboard', path: '/leaderboard' },
+  { label: 'History',     path: '/tournament-history' },
   { label: 'Players',     path: '/players' },
 ];
 

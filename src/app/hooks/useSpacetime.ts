@@ -117,6 +117,11 @@ export function useSpacetime() {
     return conn.reducers.registerUser({ username, email, passwordHash });
   }, [conn]);
 
+  const updateAccount = useCallback((username: string) => {
+    if (!conn) return Promise.reject(new Error('Not connected to the arena yet'));
+    return conn.reducers.updateAccount({ username });
+  }, [conn]);
+
   const verifyLogin = useCallback((usernameOrEmail: string, passwordHash: string) => {
     if (!conn) return Promise.reject(new Error('Not connected to the arena yet'));
     return conn.reducers.verifyLogin({ usernameOrEmail, passwordHash });
@@ -180,7 +185,7 @@ export function useSpacetime() {
     conn, identity, connected, currentUser,
     fighters, tournaments, tournamentFighters, arenaTiles,
     bets, liveEvents, sponsorDrops, contracts, auctionBids, users, friendships,
-    register, verifyLogin, placeBet, sponsorFighter,
+    register, verifyLogin, updateAccount, placeBet, sponsorFighter,
     createTournament, createFighter, hostTournament, placeBid, logout,
     updateProfile, sendFriendRequest, respondToFriendRequest, removeFriend,
   };

@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router';
 import { motion } from 'motion/react';
-import { Users, Check, X, UserMinus } from 'lucide-react';
+import { Users, Check, X, UserMinus, Search, UserPlus, Pencil } from 'lucide-react';
 import { Button } from '../components/Button';
 import { NavBar } from '../components/NavBar';
 import { useDB } from '../context/SpacetimeContext';
@@ -9,9 +10,10 @@ const EMOJI_CHOICES = ['🗡️', '🛡️', '🔥', '🐺', '👑', '💀', '�
 const ARCHETYPES = ['AGGRESSIVE', 'STRATEGIC', 'COWARDLY', 'DIPLOMATIC', 'BETRAYER', 'SURVIVALIST'];
 
 export function ProfilePage() {
+  const navigate = useNavigate();
   const {
-    currentUser, identity, fighters, friendships,
-    updateProfile, respondToFriendRequest, removeFriend,
+    currentUser, identity, fighters, friendships, users,
+    updateProfile, updateAccount, respondToFriendRequest, removeFriend, sendFriendRequest,
   } = useDB();
 
   const [bio, setBio]               = useState(currentUser?.bio ?? '');
@@ -19,6 +21,14 @@ export function ProfilePage() {
   const [archetype, setArchetype]   = useState(currentUser?.favoriteArchetype ?? 'STRATEGIC');
   const [saving, setSaving]         = useState(false);
   const [message, setMessage]       = useState<string | null>(null);
+
+  const [editingName, setEditingName] = useState(false);
+  const [usernameDraft, setUsernameDraft] = useState(currentUser?.username ?? '');
+  const [nameSaving, setNameSaving]   = useState(false);
+  const [nameMessage, setNameMessage] = useState<string | null>(null);
+
+  const [search, setSearch]           = useState('');
+  const [searchFeedback, setSearchFeedback] = useState<Record<string, string>>({});
 
   const myHex = identity;
 
@@ -33,12 +43,22 @@ export function ProfilePage() {
     f.status === 'PENDING' && f.requesterId?.toHexString?.() === myHex
   );
 
-  const { users } = useDB();
   const userByHex = (hex: string) => users.find(u => u.identity?.toHexString?.() === hex);
   const otherOf = (f: any) =>
     f.requesterId?.toHexString?.() === myHex ? f.addresseeId?.toHexString?.() : f.requesterId?.toHexString?.();
+  const friendshipWith = (otherHex: string) => friendships.find(f =>
+    (f.requesterId?.toHexString?.() === myHex && f.addresseeId?.toHexString?.() === otherHex) ||
+    (f.requesterId?.toHexString?.() === otherHex && f.addresseeId?.toHexString?.() === myHex)
+  );
 
   const ownedFighters = fighters.filter(f => f.ownerIdentity?.toHexString?.() === myHex);
+
+  const searchResults = search.trim()
+    ? users
+        .filter(u => u.identity?.toHexString?.() !== myHex)
+        .filter(u => u.username?.toLowerCase().includes(search.trim().toLowerCase()))
+        .slice(0, 8)
+    : [];
 
   const handleSave = async () => {
     setSaving(true);
@@ -50,6 +70,30 @@ export function ProfilePage() {
       setMessage(e?.message ?? 'Failed to update profile');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSaveName = async () => {
+    setNameSaving(true);
+    setNameMessage(null);
+    try {
+      await updateAccount(usernameDraft.trim());
+      setNameMessage('Username updated.');
+      setEditingName(false);
+    } catch (e: any) {
+      setNameMessage(e?.message ?? 'Failed to update username');
+    } finally {
+      setNameSaving(false);
+    }
+  };
+
+  const handleAddFriend = async (u: any) => {
+    const hex = u.identity?.toHexString?.();
+    try {
+      await sendFriendRequest(u.identity);
+      setSearchFeedback(prev => ({ ...prev, [hex]: 'sent' }));
+    } catch (e: any) {
+      setSearchFeedback(prev => ({ ...prev, [hex]: e?.message ?? 'Failed' }));
     }
   };
 
@@ -75,7 +119,39 @@ export function ProfilePage() {
               <div className="w-20 h-20 rounded-full bg-bg-tertiary border border-accent-gold flex items-center justify-center text-4xl mb-3">
                 {avatar}
               </div>
-              <h2 className="font-display text-2xl text-accent-gold">{currentUser?.username ?? '...'}</h2>
+              {editingName ? (
+                <div className="w-full max-w-[220px] space-y-2">
+                  <input
+                    value={usernameDraft}
+                    onChange={(e) => setUsernameDraft(e.target.value)}
+                    maxLength={24}
+                    className="w-full bg-bg-tertiary border border-accent-gold text-text-primary px-3 py-1.5 font-display text-lg text-center outline-none"
+                  />
+                  <div className="flex gap-2">
+                    <Button className="flex-1 !py-1.5 !text-xs" onClick={handleSaveName} disabled={nameSaving}>
+                      {nameSaving ? 'Saving...' : 'Save'}
+                    </Button>
+                    <button
+                      onClick={() => { setEditingName(false); setUsernameDraft(currentUser?.username ?? ''); setNameMessage(null); }}
+                      className="px-3 border border-separator text-text-secondary hover:text-text-primary hover:border-accent-gold transition-colors font-heading text-xs uppercase"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                  {nameMessage && <div className="font-mono text-[10px] text-accent-ice-blue">{nameMessage}</div>}
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <h2 className="font-display text-2xl text-accent-gold">{currentUser?.username ?? '...'}</h2>
+                  <button
+                    onClick={() => { setEditingName(true); setUsernameDraft(currentUser?.username ?? ''); setNameMessage(null); }}
+                    title="Edit username"
+                    className="text-text-secondary hover:text-accent-gold transition-colors"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
               <p className="font-mono text-xs text-text-secondary mt-1">{currentUser?.email}</p>
               <div className="mt-3 font-mono text-sm text-accent-gold">
                 ${Number(currentUser?.balance ?? 0).toFixed(2)}
@@ -136,6 +212,70 @@ export function ProfilePage() {
 
           {/* Right: stats + friends */}
           <div className="lg:col-span-2 space-y-8">
+            {/* Search players */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+              className="bg-bg-secondary border border-separator inner-glow p-6"
+            >
+              <h3 className="font-display text-xl text-accent-gold mb-4 uppercase flex items-center gap-2">
+                <Search className="w-5 h-5" /> Find Players
+              </h3>
+              <div className="relative mb-3">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-secondary" />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search by username..."
+                  className="w-full bg-bg-tertiary border border-separator focus:border-accent-gold text-text-primary pl-10 pr-4 py-2 font-mono text-sm outline-none"
+                />
+              </div>
+
+              {search.trim() && (
+                searchResults.length === 0 ? (
+                  <p className="font-mono text-xs text-text-secondary">No players match "{search.trim()}".</p>
+                ) : (
+                  <div className="space-y-2">
+                    {searchResults.map(u => {
+                      const hex = u.identity?.toHexString?.();
+                      const fr  = friendshipWith(hex);
+                      return (
+                        <div key={hex} className="flex items-center justify-between bg-bg-tertiary border border-separator p-3">
+                          <div className="flex items-center gap-3">
+                            <span className="text-xl">{u.avatarEmoji ?? '🗡️'}</span>
+                            <div>
+                              <div className="font-mono text-sm text-text-primary">{u.username}</div>
+                              <div className="font-mono text-[10px] text-text-secondary uppercase">{u.favoriteArchetype ?? 'STRATEGIC'}</div>
+                            </div>
+                          </div>
+                          {fr?.status === 'ACCEPTED' ? (
+                            <span className="font-mono text-[10px] text-success-green uppercase">Friends</span>
+                          ) : fr?.status === 'PENDING' ? (
+                            <span className="font-mono text-[10px] text-text-secondary uppercase">Pending</span>
+                          ) : searchFeedback[hex] === 'sent' ? (
+                            <span className="font-mono text-[10px] text-success-green uppercase">Request sent</span>
+                          ) : (
+                            <button
+                              onClick={() => handleAddFriend(u)}
+                              className="flex items-center gap-1.5 border border-accent-gold text-accent-gold px-2.5 py-1 font-mono text-[10px] uppercase hover:bg-accent-gold/10 transition-colors"
+                            >
+                              <UserPlus className="w-3 h-3" /> Add
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )
+              )}
+
+              <button
+                onClick={() => navigate('/players')}
+                className="mt-4 font-mono text-xs text-accent-gold hover:underline"
+              >
+                Browse all players →
+              </button>
+            </motion.div>
+
             {/* Stats */}
             <motion.div
               initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}

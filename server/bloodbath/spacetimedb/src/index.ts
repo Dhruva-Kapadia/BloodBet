@@ -802,3 +802,19 @@ export const removeFriend = spacetimedb.reducer(
     ctx.db.friendship.id.delete(friendshipId);
   }
 );
+
+export const updateAccount = spacetimedb.reducer(
+  { name: 'updateAccount' },
+  { username: t.string() },
+  (ctx, { username }) => {
+    const me = ctx.db.user.identity.find(ctx.sender);
+    if (!me) throw new Error('Not registered');
+    const trimmed = username.trim();
+    if (trimmed.length < 3 || trimmed.length > 24) throw new Error('Username must be 3-24 characters');
+    if (trimmed !== me.username) {
+      const taken = [...ctx.db.user.iter()].find((u: any) => u.username === trimmed && u.identity.toHexString() !== ctx.sender.toHexString());
+      if (taken) throw new Error('Username already taken');
+    }
+    ctx.db.user.identity.update({ ...me, username: trimmed });
+  }
+);

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { CharacterCard } from '../components/CharacterCard';
 import { ArenaMap } from '../components/ArenaMap';
+import { CinematicIntro } from '../components/CinematicIntro';
 import { Button } from '../components/Button';
 import { NavBar } from '../components/NavBar';
 import { motion, AnimatePresence } from 'motion/react';
@@ -24,7 +25,7 @@ const EVENT_ICONS: Record<string, string> = {
   TRAP:     '⚠️',
 };
 
-const BETTING_WINDOW_MS = 2 * 60 * 1000;
+const BETTING_WINDOW_MS = 30 * 60 * 1000;
 
 function timestampToMs(ts: any): number {
   const micros = ts?.microsSinceUnixEpoch;
@@ -66,6 +67,34 @@ export function TournamentPage() {
   const liveTournament     = tournaments.find(t => t.status === 'LIVE');
   const upcomingTournament = tournaments.find(t => t.status === 'UPCOMING');
   const activeTournament   = liveTournament ?? upcomingTournament;
+
+  // Cinematic intro: play once when a tournament we're watching goes UPCOMING -> LIVE
+  const [introTournamentId, setIntroTournamentId] = useState<number | null>(null);
+  const [seenIntroFor, setSeenIntroFor]           = useState<Set<number>>(new Set());
+  useEffect(() => {
+    if (liveTournament) {
+      const lid = Number(liveTournament.id);
+      if (Number(liveTournament.currentHour ?? 0) <= 1 && !seenIntroFor.has(lid)) {
+        setIntroTournamentId(lid);
+        setSeenIntroFor(prev => new Set(prev).add(lid));
+      }
+    }
+  }, [liveTournament?.id, liveTournament?.currentHour]);
+
+  // When the tournament we were watching wraps up, send the user to its summary page
+  const [lastSeenLiveId, setLastSeenLiveId] = useState<number | null>(null);
+  useEffect(() => {
+    if (liveTournament) setLastSeenLiveId(Number(liveTournament.id));
+  }, [liveTournament?.id]);
+  useEffect(() => {
+    if (!liveTournament && lastSeenLiveId !== null) {
+      const justEnded = tournaments.find(t => Number(t.id) === lastSeenLiveId && t.status === 'COMPLETED');
+      if (justEnded) {
+        navigate(`/tournament-summary/${lastSeenLiveId}`);
+        setLastSeenLiveId(null);
+      }
+    }
+  }, [liveTournament, lastSeenLiveId, tournaments, navigate]);
 
   // Countdown to betting close / tournament start (UPCOMING tournaments only)
   const countdownTarget = activeTournament?.status === 'UPCOMING'
@@ -140,8 +169,20 @@ export function TournamentPage() {
     }, 2000);
   };
 
+  const introTournament = introTournamentId !== null
+    ? tournaments.find(t => Number(t.id) === introTournamentId)
+    : null;
+
   return (
     <div className="min-h-screen bg-bg-primary">
+      {introTournament && (
+        <CinematicIntro
+          tournamentName={introTournament.name}
+          arenaType={introTournament.arenaType}
+          fighterCount={tournamentFighters.filter(tf => Number(tf.tournamentId) === introTournamentId).length}
+          onFinish={() => setIntroTournamentId(null)}
+        />
+      )}
       <NavBar />
 
       <div className="max-w-7xl mx-auto p-6">
