@@ -44,6 +44,18 @@ const TILE_COLORS: Record<string, string> = {
   CORNUCOPIA: '#5a4a14',
 };
 
+// Small terrain "props" rendered on top of tiles so the map reads as an
+// actual landscape (trees, rocks, waves...) instead of flat colored shapes.
+const TERRAIN_FEATURES: Record<string, string[]> = {
+  PLAIN:      ['🌾', '🪨', ''],
+  FOREST:     ['🌲', '🌳', '🌲'],
+  WATER:      ['🌊', '〰️', '🌊'],
+  RUINS:      ['🏛️', '🪨', '🧱'],
+  SHELTER:    ['⛺', '🏚️', ''],
+  DANGER:     ['🔥', '☠️', '🪨'],
+  CORNUCOPIA: ['✨', '👑', '✨'],
+};
+
 // Terrain-style gradient + texture per tile type, with light/dark variants
 // chosen per-tile (deterministically) so adjacent same-type tiles still read
 // as natural, uneven ground rather than a flat repeating grid.
@@ -232,6 +244,19 @@ export function ArenaMap({ width, height, tiles, roster, events = [], currentHou
                     }}
                     title={tileType}
                   />
+                  {(() => {
+                    const features = TERRAIN_FEATURES[tileType] ?? [];
+                    const feature = features[(x * 19 + y * 23) % (features.length || 1)];
+                    if (!feature) return null;
+                    return (
+                      <div
+                        className="absolute text-[13px] leading-none pointer-events-none opacity-80 drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]"
+                        style={{ top: TILE_H / 2 - 6, transform: `translateY(${elevation}px)` }}
+                      >
+                        {feature}
+                      </div>
+                    );
+                  })()}
                   {tile?.hasResource && tile.resourceType && (
                     <div
                       className="absolute text-xs leading-none"

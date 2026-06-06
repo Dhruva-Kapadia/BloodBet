@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, Clock, Sword, Users, Zap, Eye, Trophy } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { useDB } from '../context/SpacetimeContext';
+import { useSound } from '../context/SoundContext';
 
 const BET_TYPES = [
   { key: 'WIN',              label: 'Wins Tournament',    odds: 12.4 },
@@ -56,6 +57,7 @@ export function TournamentPage() {
     currentUser, tournaments, fighters, tournamentFighters, arenaTiles, bets, liveEvents,
     placeBet, identity,
   } = useDB();
+  const { play } = useSound();
 
   const [selectedFighterId, setSelectedFighterId] = useState<number | null>(null);
   const [selectedBetType,   setSelectedBetType]   = useState<string>('WIN');
@@ -154,6 +156,7 @@ export function TournamentPage() {
       setBetError('Betting is only open for upcoming tournaments.'); return;
     }
 
+    play('bet');
     placeBet(
       Number(selectedFighter.id),
       selectedBetType,

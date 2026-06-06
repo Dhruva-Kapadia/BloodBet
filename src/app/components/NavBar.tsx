@@ -1,7 +1,8 @@
 import { useNavigate, useLocation } from 'react-router';
-import { Wallet, LogOut, Menu, X } from 'lucide-react';
+import { Wallet, LogOut, Menu, X, Volume2, VolumeX } from 'lucide-react';
 import { useState } from 'react';
 import { useDB } from '../context/SpacetimeContext';
+import { useSound } from '../context/SoundContext';
 import { NotificationCenter } from './NotificationCenter';
 
 const NAV_LINKS = [
@@ -19,6 +20,7 @@ export function NavBar() {
   const navigate  = useNavigate();
   const location  = useLocation();
   const { currentUser, connected, logout } = useDB();
+  const { enabled: soundOn, toggle: toggleSound } = useSound();
   const [menuOpen, setMenuOpen] = useState(false);
 
   const balance  = Number(currentUser?.balance ?? 0).toFixed(2);
@@ -60,6 +62,13 @@ export function NavBar() {
 
           {/* Notifications */}
           <NotificationCenter />
+
+          {/* Sound toggle */}
+          <button onClick={toggleSound}
+            className="text-text-secondary hover:text-accent-gold transition-colors p-1"
+            title={soundOn ? 'Mute sound effects' : 'Unmute sound effects'}>
+            {soundOn ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+          </button>
 
           {/* Balance */}
           <div className="hidden sm:flex items-center gap-2 bg-bg-secondary border border-accent-gold px-3 py-1.5">

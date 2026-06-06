@@ -5,6 +5,7 @@ import { motion } from 'motion/react';
 import { Eye, EyeOff } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { useDB } from '../context/SpacetimeContext';
+import { useSound } from '../context/SoundContext';
 
 async function hashPassword(password: string): Promise<string> {
   const data = new TextEncoder().encode(password);
@@ -26,6 +27,7 @@ export function LoginPage() {
 
   const navigate = useNavigate();
   const { connected, register, verifyLogin } = useDB();
+  const { play } = useSound();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,8 +52,10 @@ export function LoginPage() {
       } else {
         await verifyLogin(loginInput.trim(), passwordHash);
       }
+      play('success');
       navigate('/dashboard');
     } catch (err: any) {
+      play('error');
       setError(err?.message ?? 'Something went wrong. Please try again.');
     } finally {
       setSubmitting(false);

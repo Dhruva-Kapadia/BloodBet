@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router';
 import { Bell, Trophy, UserPlus, UserCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useDB } from '../context/SpacetimeContext';
+import { useSound } from '../context/SoundContext';
 
 const KIND_ICONS: Record<string, JSX.Element> = {
   TOURNAMENT:      <Trophy className="w-4 h-4 text-accent-gold" />,
@@ -28,6 +29,17 @@ export function NotificationCenter() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const { play } = useSound();
+  const seenIds = useRef<Set<number> | null>(null);
+
+  useEffect(() => {
+    const ids = new Set(notifications.map((n: any) => Number(n.id)));
+    if (seenIds.current) {
+      const isNew = [...ids].some(id => !seenIds.current!.has(id));
+      if (isNew) play('notification');
+    }
+    seenIds.current = ids;
+  }, [notifications, play]);
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
