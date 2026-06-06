@@ -1,0 +1,25 @@
+{
+  "name": "bloodbath",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb",
+    "spacetime:publish:local": "spacetime publish --module-path spacetimedb --server local",
+    "spacetime:publish": "spacetime publish --module-path spacetimedb --server maincloud",
+    "orchestrator": "tsx --env-file=.env orchestrator.ts"
+  },
+  "dependencies": {
+    "groq-sdk": "^1.2.1",
+    "spacetimedb": "^2.4.1",
+    "undici": "^6.26.0"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.2",
+    "tsx": "^4.22.4",
+    "typescript": "~5.6.2",
+    "vite": "^7.1.5"
+  }
+}
