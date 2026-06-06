@@ -193,12 +193,27 @@ const notification = table(
   }
 );
 
+const tournamentRegistration = table(
+  {
+    name: 'tournamentRegistration',
+    public: true,
+    indexes: [{ accessor: 'by_tournament', algorithm: 'btree', columns: ['tournamentId', 'userId'] }],
+  },
+  {
+    id:           t.u32().primaryKey().autoInc(),
+    tournamentId: t.u32().index('btree'),
+    userId:       t.identity().index('btree'),
+    role:         t.string(), // 'VIEWER' | 'BETTOR'
+    registeredAt: t.timestamp(),
+  }
+);
+
 // ─── SCHEMA ───────────────────────────────────────────────────────────────────
 
 const spacetimedb = schema({
   user, fighterTemplate, tournament, arenaTile,
   tournamentFighter, bet, sponsorDrop, liveEvent,
-  contract, auctionBid, friendship, notification,
+  contract, auctionBid, friendship, notification, tournamentRegistration,
 });
 
 export default spacetimedb;
@@ -511,11 +526,11 @@ function weightedPick(ctx: any, weights: Record<string, number>): string {
 
 export const startTournament = spacetimedb.reducer(
   { name: 'startTournament' },
-  {},
-  (ctx, _args) => {
+  { tournamentId: t.u32() },
+  (ctx, { tournamentId }) => {
     requireAdmin(ctx);
-    const tournament = [...ctx.db.tournament.iter()].find((t: any) => t.status === 'UPCOMING');
-    if (!tournament) throw new SenderError('No upcoming tournament');
+    const tournament = ctx.db.tournament.id.find(tournamentId);
+    if (!tournament || tournament.status !== 'UPCOMING') throw new SenderError('Tournament not found or not upcoming');
 
     // Every arena is freshly generated: size, danger level, and biome mix
     // all vary so no two tournaments play out on the same map.
@@ -803,15 +818,45 @@ export const advanceHour = spacetimedb.reducer(
   }
 );
 
+export const registerForTournament = spacetimedb.reducer(
+  { name: 'registerForTournament' },
+  { tournamentId: t.u32() },
+  (ctx, { tournamentId }) => {
+    const user = ctx.db.user.identity.find(ctx.sender);
+    if (!user) throw new SenderError('Not registered');
+    const tournament = ctx.db.tournament.id.find(tournamentId);
+    if (!tournament) throw new SenderError('Tournament not found');
+    if (tournament.status !== 'UPCOMING') throw new SenderError('Registration is closed');
+    const existing = [...ctx.db.tournamentRegistration.by_tournament.filter([tournamentId, ctx.sender])]
+      .find((r: any) => r.userId.toHexString() === ctx.sender.toHexString());
+    if (existing) throw new SenderError('Already registered');
+    ctx.db.tournamentRegistration.insert({
+      id: 0, tournamentId, userId: ctx.sender,
+      role: 'VIEWER', registeredAt: ctx.timestamp,
+    });
+  }
+);
+
+export const unregisterFromTournament = spacetimedb.reducer(
+  { name: 'unregisterFromTournament' },
+  { tournamentId: t.u32() },
+  (ctx, { tournamentId }) => {
+    const regs = [...ctx.db.tournamentRegistration.tournamentId.filter(tournamentId)];
+    const mine = regs.find((r: any) => r.userId.toHexString() === ctx.sender.toHexString());
+    if (!mine) return;
+    ctx.db.tournamentRegistration.id.delete(mine.id);
+  }
+);
+
 export const placeBet = spacetimedb.reducer(
   { name: 'placeBet' },
-  { fighterId: t.u32(), betType: t.string(), amount: t.f64() },
-  (ctx, { fighterId, betType, amount }) => {
+  { tournamentId: t.u32(), fighterId: t.u32(), betType: t.string(), amount: t.f64() },
+  (ctx, { tournamentId, fighterId, betType, amount }) => {
     const user = ctx.db.user.identity.find(ctx.sender);
     if (!user) throw new SenderError('Not registered');
     if (user.balance < amount) throw new SenderError('Insufficient funds');
-    const tournament = [...ctx.db.tournament.iter()].find((t: any) => t.status === 'UPCOMING');
-    if (!tournament) throw new SenderError('No upcoming tournament');
+    const tournament = ctx.db.tournament.id.find(tournamentId);
+    if (!tournament || tournament.status !== 'UPCOMING') throw new SenderError('No open tournament');
     const oddsMap: Record<string, number> = {
       WIN: 9.0, DIES_FIRST: 22.0, SURVIVES_DAY_1: 1.8, MOST_KILLS: 6.0, FORMS_ALLIANCE: 2.1,
     };
@@ -822,6 +867,16 @@ export const placeBet = spacetimedb.reducer(
       id: 0, userId: ctx.sender, tournamentId: tournament.id,
       fighterId, betType, amount, odds, status: 'PENDING', placedAt: ctx.timestamp,
     });
+    // Auto-upgrade registration to BETTOR when a bet is placed
+    const existingReg = [...ctx.db.tournamentRegistration.tournamentId.filter(tournamentId)]
+      .find((r: any) => r.userId.toHexString() === ctx.sender.toHexString());
+    if (existingReg) {
+      ctx.db.tournamentRegistration.id.update({ ...existingReg, role: 'BETTOR' });
+    } else {
+      ctx.db.tournamentRegistration.insert({
+        id: 0, tournamentId, userId: ctx.sender, role: 'BETTOR', registeredAt: ctx.timestamp,
+      });
+    }
   }
 );
 

@@ -134,7 +134,7 @@ export function AdminPage() {
                   <div className="font-heading text-sm text-text-primary">{t.name}</div>
                   <div className="font-mono text-[10px] text-text-secondary uppercase">{t.arenaType} · {Number(t.gridWidth)}×{Number(t.gridHeight)}</div>
                 </div>
-                <Button variant="secondary" disabled={busy === `start-${t.id}`} onClick={() => run(`start-${t.id}`, startTournament)}>
+                <Button variant="secondary" disabled={busy === `start-${t.id}`} onClick={() => run(`start-${t.id}`, () => startTournament(Number(t.id)))}>
                   <Play className="w-3.5 h-3.5 inline mr-1.5" />
                   {busy === `start-${t.id}` ? 'Starting...' : 'Start'}
                 </Button>
