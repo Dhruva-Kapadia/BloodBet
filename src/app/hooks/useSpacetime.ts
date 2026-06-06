@@ -194,6 +194,31 @@ export function useSpacetime() {
     return conn.reducers.markAllNotificationsRead({});
   }, [conn]);
 
+  const claimAdmin = useCallback(() => {
+    if (!conn) return Promise.reject(new Error('Not connected to the arena yet'));
+    return conn.reducers.claimAdmin({});
+  }, [conn]);
+
+  const setAdmin = useCallback((targetIdentity: any, isAdmin: boolean) => {
+    if (!conn) return Promise.reject(new Error('Not connected to the arena yet'));
+    return conn.reducers.setAdmin({ targetIdentity, isAdmin });
+  }, [conn]);
+
+  const adminCreateTournament = useCallback((name: string, arenaType: string, gridWidth: number, gridHeight: number) => {
+    if (!conn) return Promise.reject(new Error('Not connected to the arena yet'));
+    return conn.reducers.adminCreateTournament({ name, arenaType, gridWidth, gridHeight });
+  }, [conn]);
+
+  const startTournament = useCallback(() => {
+    if (!conn) return Promise.reject(new Error('Not connected to the arena yet'));
+    return conn.reducers.startTournament({});
+  }, [conn]);
+
+  const advanceHour = useCallback((tournamentId: number, decisions: string) => {
+    if (!conn) return Promise.reject(new Error('Not connected to the arena yet'));
+    return conn.reducers.advanceHour({ tournamentId, decisions });
+  }, [conn]);
+
   const logout = useCallback(() => {
     localStorage.removeItem('spacetime_token');
     setCurrentUser(null);
@@ -208,5 +233,6 @@ export function useSpacetime() {
     createTournament, createFighter, hostTournament, placeBid, logout,
     updateProfile, sendFriendRequest, respondToFriendRequest, removeFriend,
     markNotificationRead, markAllNotificationsRead,
+    claimAdmin, setAdmin, adminCreateTournament, startTournament, advanceHour,
   };
 }

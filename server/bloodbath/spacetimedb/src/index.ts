@@ -16,6 +16,7 @@ const user = table(
     bio:               t.string(),
     avatarEmoji:       t.string(),
     favoriteArchetype: t.string(),
+    isAdmin:           t.bool(),
   }
 );
 
@@ -376,6 +377,7 @@ export const registerUser = spacetimedb.reducer(
         balance: 100.0, tournamentsHosted: 0, fightersOwned: 0,
         createdAt: ctx.timestamp,
         bio: '', avatarEmoji: '🗡️', favoriteArchetype: 'STRATEGIC',
+        isAdmin: false,
       });
     }
   }
@@ -408,6 +410,7 @@ export const verifyLogin = spacetimedb.reducer(
       fightersOwned: user.fightersOwned,
       createdAt: user.createdAt,
       bio: user.bio, avatarEmoji: user.avatarEmoji, favoriteArchetype: user.favoriteArchetype,
+      isAdmin: user.isAdmin,
     });
   }
 );
@@ -421,6 +424,53 @@ function notifyAllUsers(ctx: any, kind: string, title: string, body: string, rel
     });
   }
 }
+
+function requireAdmin(ctx: any) {
+  const user = ctx.db.user.identity.find(ctx.sender);
+  if (!user || !user.isAdmin) throw new SenderError('Admin privileges required');
+  return user;
+}
+
+export const claimAdmin = spacetimedb.reducer(
+  { name: 'claimAdmin' },
+  {},
+  (ctx, _args) => {
+    const user = ctx.db.user.identity.find(ctx.sender);
+    if (!user) throw new SenderError('Account not found');
+    if (user.isAdmin) return;
+    const anyAdmin = [...ctx.db.user.iter()].some((u: any) => u.isAdmin);
+    if (anyAdmin) throw new SenderError('An admin already exists');
+    ctx.db.user.identity.update({ ...user, isAdmin: true });
+  }
+);
+
+export const setAdmin = spacetimedb.reducer(
+  { name: 'setAdmin' },
+  { targetIdentity: t.identity(), isAdmin: t.bool() },
+  (ctx, { targetIdentity, isAdmin }) => {
+    requireAdmin(ctx);
+    const target = ctx.db.user.identity.find(targetIdentity);
+    if (!target) throw new SenderError('Target user not found');
+    ctx.db.user.identity.update({ ...target, isAdmin });
+  }
+);
+
+export const adminCreateTournament = spacetimedb.reducer(
+  { name: 'adminCreateTournament' },
+  { name: t.string(), arenaType: t.string(), gridWidth: t.u32(), gridHeight: t.u32() },
+  (ctx, { name, arenaType, gridWidth, gridHeight }) => {
+    requireAdmin(ctx);
+    const W = Math.max(6, Math.min(30, gridWidth));
+    const H = Math.max(6, Math.min(30, gridHeight));
+    const tournamentId = ctx.db.tournament.insert({
+      id: 0, name, arenaType, status: 'UPCOMING', currentHour: 0,
+      gridWidth: W, gridHeight: H, prizePool: 0,
+      hostIdentity: ctx.sender, createdAt: ctx.timestamp,
+    }).id;
+    notifyAllUsers(ctx, 'TOURNAMENT', 'New Tournament Announced',
+      `"${name}" is opening in the ${arenaType}. Place your bets!`, tournamentId, ctx.sender);
+  }
+);
 
 export const createTournament = spacetimedb.reducer(
   { name: 'createTournament' },
@@ -463,6 +513,7 @@ export const startTournament = spacetimedb.reducer(
   { name: 'startTournament' },
   {},
   (ctx, _args) => {
+    requireAdmin(ctx);
     const tournament = [...ctx.db.tournament.iter()].find((t: any) => t.status === 'UPCOMING');
     if (!tournament) throw new SenderError('No upcoming tournament');
 
@@ -565,6 +616,7 @@ export const advanceHour = spacetimedb.reducer(
   { name: 'advanceHour' },
   { tournamentId: t.u32(), decisions: t.string() },
   (ctx, { tournamentId, decisions }) => {
+    requireAdmin(ctx);
     const tournament = [...ctx.db.tournament.iter()]
       .find((t: any) => Number(t.id) === Number(tournamentId));
     if (!tournament || tournament.status !== 'LIVE') return;
