@@ -86,7 +86,6 @@ export function TournamentPage() {
     }
 
     placeBet(
-      Number(activeTournament.id),
       Number(selectedFighter.id),
       selectedBetType,
       Number(betAmount)
