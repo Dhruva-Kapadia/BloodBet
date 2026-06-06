@@ -436,36 +436,113 @@ export const createTournament = spacetimedb.reducer(
   }
 );
 
+// Per-biome tile weightings — each arena type favors different terrain so
+// every tournament's map actually feels like its named environment.
+const BIOME_WEIGHTS: Record<string, Record<string, number>> = {
+  arctic:  { PLAIN: 5, WATER: 4, RUINS: 2, SHELTER: 2, DANGER: 2, FOREST: 1 },
+  jungle:  { FOREST: 6, PLAIN: 2, WATER: 2, RUINS: 2, SHELTER: 1, DANGER: 2 },
+  volcano: { DANGER: 5, RUINS: 4, PLAIN: 2, SHELTER: 1, FOREST: 1, WATER: 1 },
+  urban:   { RUINS: 5, PLAIN: 4, SHELTER: 3, DANGER: 2, FOREST: 1, WATER: 1 },
+  ocean:   { WATER: 6, PLAIN: 2, SHELTER: 1, RUINS: 1, DANGER: 1, FOREST: 1 },
+  desert:  { PLAIN: 5, RUINS: 3, DANGER: 3, SHELTER: 1, WATER: 1, FOREST: 1 },
+};
+const DEFAULT_BIOME_WEIGHTS = { PLAIN: 4, FOREST: 2, WATER: 2, RUINS: 2, SHELTER: 1, DANGER: 2 };
+
+function weightedPick(ctx: any, weights: Record<string, number>): string {
+  const entries = Object.entries(weights);
+  const total = entries.reduce((s, [, w]) => s + w, 0);
+  let roll = ctx.random() * total;
+  for (const [type, w] of entries) {
+    if (roll < w) return type;
+    roll -= w;
+  }
+  return entries[0][0];
+}
+
 export const startTournament = spacetimedb.reducer(
   { name: 'startTournament' },
   {},
   (ctx, _args) => {
     const tournament = [...ctx.db.tournament.iter()].find((t: any) => t.status === 'UPCOMING');
     if (!tournament) throw new SenderError('No upcoming tournament');
-    const W = Number(tournament.gridWidth);
-    const H = Number(tournament.gridHeight);
-    const terrainTypes = ['PLAIN','PLAIN','PLAIN','FOREST','FOREST','WATER','RUINS','SHELTER','DANGER'];
+
+    // Every arena is freshly generated: size, danger level, and biome mix
+    // all vary so no two tournaments play out on the same map.
+    const W = ctx.random.integerInRange(10, 20);
+    const H = ctx.random.integerInRange(10, 20);
+    const stakeRoll  = ctx.random();                       // 0..1 — drives "higher stakes" arenas
+    const dangerBoost = 1 + stakeRoll * 1.8;               // bigger/riskier arenas skew deadlier
+    const prizePool   = Math.round((W * H) * (8 + stakeRoll * 22));
+
+    const baseWeights = BIOME_WEIGHTS[tournament.arenaType] ?? DEFAULT_BIOME_WEIGHTS;
+    const weights: Record<string, number> = { ...baseWeights, DANGER: (baseWeights.DANGER ?? 1) * dangerBoost };
+
+    const cx0 = Math.floor(W * (0.35 + ctx.random() * 0.1));
+    const cx1 = Math.ceil(W * (0.55 + ctx.random() * 0.1));
+    const cy0 = Math.floor(H * (0.35 + ctx.random() * 0.1));
+    const cy1 = Math.ceil(H * (0.55 + ctx.random() * 0.1));
+
+    // First pass: seed each tile from the biome's weighted distribution.
+    const grid: string[][] = [];
+    for (let x = 0; x < W; x++) {
+      grid[x] = [];
+      for (let y = 0; y < H; y++) {
+        const isCenter = x >= cx0 && x < cx1 && y >= cy0 && y < cy1;
+        grid[x][y] = isCenter ? 'CORNUCOPIA' : weightedPick(ctx, weights);
+      }
+    }
+    // Smoothing pass: tiles partially adopt a neighbor's type so terrain
+    // clumps into believable regions (forests, lakes, ruins) rather than static.
+    const final: string[][] = [];
+    for (let x = 0; x < W; x++) {
+      final[x] = [];
+      for (let y = 0; y < H; y++) {
+        if (grid[x][y] === 'CORNUCOPIA') { final[x][y] = 'CORNUCOPIA'; continue; }
+        if (ctx.random() < 0.4) {
+          const neighbors = [[x-1,y],[x+1,y],[x,y-1],[x,y+1]].filter(([nx,ny]) => nx >= 0 && nx < W && ny >= 0 && ny < H && grid[nx][ny] !== 'CORNUCOPIA');
+          if (neighbors.length) {
+            const [nx, ny] = neighbors[ctx.random.integerInRange(0, neighbors.length - 1)];
+            final[x][y] = grid[nx][ny];
+            continue;
+          }
+        }
+        final[x][y] = grid[x][y];
+      }
+    }
+
+    const resourceTypes = ['FOOD','WATER','MEDKIT','WEAPON','ARMOR','INTEL'];
+    const resourceChance = 0.16 + stakeRoll * 0.1;
     for (let x = 0; x < W; x++) {
       for (let y = 0; y < H; y++) {
-        const isCenter   = x >= 4 && x <= 7 && y >= 4 && y <= 7;
-        const tileType   = isCenter ? 'CORNUCOPIA' : terrainTypes[(x * 3 + y * 7) % terrainTypes.length];
-        const hasResource = (x * 13 + y * 17) % 10 < 3;
-        const resourceTypes = ['FOOD','WATER','MEDKIT','WEAPON','FOOD','WATER','FOOD','INTEL'];
-        const resourceType  = hasResource ? resourceTypes[(x * 5 + y * 11) % resourceTypes.length] : undefined;
+        const tileType = final[x][y];
+        const hasResource = tileType !== 'CORNUCOPIA' && ctx.random() < resourceChance;
+        const resourceType = hasResource ? resourceTypes[ctx.random.integerInRange(0, resourceTypes.length - 1)] : undefined;
         ctx.db.arenaTile.insert({ id: 0, tournamentId: tournament.id, x, y, tileType, hasResource, resourceType });
       }
     }
+    ctx.db.tournament.id.update({ ...tournament, gridWidth: W, gridHeight: H, prizePool, status: 'LIVE', currentHour: 1 });
     const allFighters = [...ctx.db.fighterTemplate.iter()];
+    const fighterCount = ctx.random.integerInRange(8, Math.min(16, allFighters.length || 8));
     const selected    = allFighters
-      .map((f: any, i: number) => ({ f, sort: (i * Number(tournament.id) * 31 + 7) % 1000 }))
+      .map((f: any, i: number) => ({ f, sort: ctx.random() }))
       .sort((a: any, b: any) => a.sort - b.sort)
-      .slice(0, 10).map((x: any) => x.f);
-    const spawnPoints = [
-      {x:0,y:0},{x:11,y:0},{x:0,y:11},{x:11,y:11},
-      {x:5,y:0},{x:0,y:5},{x:11,y:5},{x:5,y:11},{x:2,y:2},{x:9,y:9},
+      .slice(0, fighterCount).map((x: any) => x.f);
+
+    // Spawn points ring the arena edges and corners, scaled to this map's size.
+    const spawnPoints: { x: number; y: number }[] = [];
+    const ring = [
+      [0, 0], [W - 1, 0], [0, H - 1], [W - 1, H - 1],
+      [Math.floor(W / 2), 0], [0, Math.floor(H / 2)],
+      [W - 1, Math.floor(H / 2)], [Math.floor(W / 2), H - 1],
+      [Math.floor(W * 0.25), Math.floor(H * 0.25)], [Math.floor(W * 0.75), Math.floor(H * 0.75)],
+      [Math.floor(W * 0.25), Math.floor(H * 0.75)], [Math.floor(W * 0.75), Math.floor(H * 0.25)],
+      [Math.floor(W * 0.15), Math.floor(H * 0.5)], [Math.floor(W * 0.85), Math.floor(H * 0.5)],
+      [Math.floor(W * 0.5), Math.floor(H * 0.15)], [Math.floor(W * 0.5), Math.floor(H * 0.85)],
     ];
+    for (const [x, y] of ring) spawnPoints.push({ x: clamp(x, 0, W - 1), y: clamp(y, 0, H - 1) });
+
     for (let i = 0; i < selected.length; i++) {
-      const f = selected[i]; const pos = spawnPoints[i];
+      const f = selected[i]; const pos = spawnPoints[i % spawnPoints.length];
       ctx.db.tournamentFighter.insert({
         id: 0, tournamentId: tournament.id, fighterId: f.id,
         isAlive: true, x: pos.x, y: pos.y,
@@ -474,10 +551,10 @@ export const startTournament = spacetimedb.reducer(
       });
       ctx.db.fighterTemplate.id.update({ ...f, tournamentsPlayed: f.tournamentsPlayed + 1 });
     }
-    ctx.db.tournament.id.update({ ...tournament, status: 'LIVE', currentHour: 1 });
+    const stakesLabel = stakeRoll > 0.66 ? 'High-stakes' : stakeRoll > 0.33 ? 'Mid-tier' : 'Standard';
     ctx.db.liveEvent.insert({
       id: 0, tournamentId: tournament.id, hour: 0, eventType: 'PHASE',
-      description: `The arena opens. ${selected.length} fighters enter the ${tournament.arenaType}.`,
+      description: `${stakesLabel} arena opens — a ${W}x${H} ${tournament.arenaType} battleground. ${selected.length} fighters enter. Prize pool: $${prizePool}.`,
       involvedIds: JSON.stringify(selected.map((f: any) => f.id)),
       x: undefined, y: undefined, timestamp: ctx.timestamp,
     });
