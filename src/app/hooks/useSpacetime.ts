@@ -108,24 +108,24 @@ export function useSpacetime() {
 
   const register = useCallback((username: string, email: string, passwordHash: string) => {
     if (!conn) return Promise.reject(new Error('Not connected to the arena yet'));
-    return conn.reducers.registerUser(username, email, passwordHash);
+    return conn.reducers.registerUser({ username, email, passwordHash });
   }, [conn]);
 
   const verifyLogin = useCallback((usernameOrEmail: string, passwordHash: string) => {
     if (!conn) return Promise.reject(new Error('Not connected to the arena yet'));
-    return conn.reducers.verifyLogin(usernameOrEmail, passwordHash);
+    return conn.reducers.verifyLogin({ usernameOrEmail, passwordHash });
   }, [conn]);
 
   const placeBet = useCallback((fighterId: number, betType: string, amount: number) => {
-    conn?.reducers.placeBet(fighterId, betType, amount);
+    conn?.reducers.placeBet({ fighterId, betType, amount });
   }, [conn]);
 
   const sponsorFighter = useCallback((fighterId: number, itemType: string) => {
-    conn?.reducers.sponsorFighter(fighterId, itemType);
+    conn?.reducers.sponsorFighter({ fighterId, itemType });
   }, [conn]);
 
   const createTournament = useCallback((name: string, arenaType: string) => {
-    conn?.reducers.createTournament(name, arenaType);
+    conn?.reducers.createTournament({ name, arenaType });
   }, [conn]);
 
   const createFighter = useCallback((
@@ -133,15 +133,15 @@ export function useSpacetime() {
     strength: number, speed: number, intelligence: number,
     luck: number, charisma: number
   ) => {
-    conn?.reducers.createFighter(name, lore, archetype, strength, speed, intelligence, luck, charisma);
+    conn?.reducers.createFighter({ name, lore, archetype, strength, speed, intelligence, luck, charisma });
   }, [conn]);
 
   const hostTournament = useCallback((name: string, arenaType: string) => {
-    conn?.reducers.hostTournament(name, arenaType);
+    conn?.reducers.hostTournament({ name, arenaType });
   }, [conn]);
 
   const placeBid = useCallback((fighterId: number, amount: number) => {
-    conn?.reducers.placeBid(fighterId, amount);
+    conn?.reducers.placeBid({ fighterId, amount });
   }, [conn]);
 
   const logout = useCallback(() => {
