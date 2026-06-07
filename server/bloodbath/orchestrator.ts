@@ -111,68 +111,35 @@ function buildPrompt(
   fighter: any, tf: any,
   visibleFighters: any[],
   nearbyResources: string[],
-  nearbyTileTypes: string[],
   currentTileType: string,
   aliveCount: number,
   totalCount: number,
   hour: number,
 ): string {
-  const archetypeGuide: Record<string, string> = {
-    AGGRESSIVE:  'You live for combat. Rush enemies, claim kills, dominate through fear. Weakness is death.',
-    STRATEGIC:   'You are patient. Gather intelligence, pick fights you can win, never waste resources.',
-    COWARDLY:    'Survival above all. Hide, flee, let others die. Fight only when cornered.',
-    DIPLOMATIC:  'Build alliances, share resources, create a network. Betray only as a last resort.',
-    BETRAYER:    'Gain trust then destroy it at the perfect moment for maximum devastation.',
-    SURVIVALIST: 'Resources keep you alive, not kills. Maintain supplies, avoid conflicts, outlast everyone.',
-  };
-
   const allies: number[]    = JSON.parse(tf.alliances ?? '[]');
   const inventory: string[] = JSON.parse(tf.inventory  ?? '[]');
-  const urgentNeed          = getUrgentNeed(tf);
-  const phase               = getPhase(aliveCount, totalCount);
-  const isNight             = hour % 24 >= 20 || hour % 24 < 6;
+  const phase = getPhase(aliveCount, totalCount);
+  const isNight = hour % 24 >= 20 || hour % 24 < 6;
 
   const enemies = visibleFighters
     .filter(f => !allies.includes(n(f.fighterId)))
-    .map(f => `${f.name}(id:${n(f.fighterId)} cond:${f.condition} inj:${n(f.injury)}% kills:${n(f.kills)})`);
-
-  const alliesVisible = visibleFighters
+    .map(f => `${f.name}#${n(f.fighterId)}(inj:${n(f.injury)}%,k:${n(f.kills)})`);
+  const alliesVis = visibleFighters
     .filter(f => allies.includes(n(f.fighterId)))
-    .map(f => `${f.name}(id:${n(f.fighterId)} cond:${f.condition})`);
+    .map(f => `${f.name}#${n(f.fighterId)}`);
 
-  return `You are ${fighter.name}, a ${fighter.archetype} gladiator. ${n(fighter.wins) > 0 ? `${n(fighter.wins)} previous wins.` : 'First tournament.'}
-STATS: STR:${n(fighter.strength)} SPD:${n(fighter.speed)} INT:${n(fighter.intelligence)} LCK:${n(fighter.luck)} CHA:${n(fighter.charisma)}
+  const archetypeShort: Record<string, string> = {
+    AGGRESSIVE:'fight hard', STRATEGIC:'think first', COWARDLY:'avoid danger',
+    DIPLOMATIC:'build alliances', BETRAYER:'gain then betray trust', SURVIVALIST:'hoard resources',
+  };
 
-SITUATION — Hour ${hour} (${isNight ? '🌙 Night' : '☀️ Day'}) | ${phase.label} | ${aliveCount}/${totalCount} alive
-  Standing on: ${currentTileType} terrain at (${n(tf.x)},${n(tf.y)})
-  Hunger:${n(tf.hunger)}% Thirst:${n(tf.thirst)}% Fatigue:${n(tf.fatigue)}% Injury:${n(tf.injury)}%
-  Inventory: [${inventory.join(', ') || 'empty'}]
-  Kills: ${n(tf.kills)} | Active allies: ${allies.length}
+  return `${fighter.name} [${fighter.archetype}] Hr${hour} ${isNight?'🌙':'☀️'} ${phase.label} ${aliveCount}/${totalCount}alive
+Pos:(${n(tf.x)},${n(tf.y)}) Tile:${currentTileType} H:${n(tf.hunger)}% T:${n(tf.thirst)}% F:${n(tf.fatigue)}% Inj:${n(tf.injury)}%
+Inv:[${inventory.join(',') || 'none'}] Kills:${n(tf.kills)} Allies:${allies.length}
+Enemies:${enemies.join(' ')||'none'} | Allies:${alliesVis.join(' ')||'none'} | Loot:${nearbyResources.join(' ')||'none'}
+Directive:${archetypeShort[fighter.archetype]||'survive'}
+JSON only:{"action":"MOVE|REST|CONSUME|ATTACK|ALLY|BETRAY|HIDE","targetId":null,"targetX":null,"targetY":null,"itemType":null,"reasoning":"1 sentence"}`;}
 
-NEARBY (within 2 tiles):
-  Enemies: ${enemies.join(' | ') || 'none'}
-  Allies:  ${alliesVisible.join(' | ') || 'none'}
-  Resources: ${nearbyResources.join(', ') || 'none'}
-  Terrain:   ${nearbyTileTypes.join(', ')}
-
-DIRECTIVE: ${archetypeGuide[fighter.archetype] ?? 'Survive.'}
-PHASE ORDER: ${phase.instruction}
-${urgentNeed ? `⚠️ URGENT NEED: ${urgentNeed} — address this immediately!` : ''}
-
-${hour - n(tf.lastInteractionHour) >= 12 ? 'CRITICAL INSTRUCTION: You MUST choose an interaction action (ATTACK, NEGOTIATE, TRADE, ALLY, WORLD_EVENT) for this fighter this turn. If no enemies are visible, you must force an encounter with a world entity by using WORLD_EVENT.' : ''}
-
-Respond with ONLY valid JSON, no markdown:
-{"action":"MOVE"|"REST"|"CONSUME"|"ATTACK"|"ALLY"|"BETRAY"|"HIDE"|"NEGOTIATE"|"TRADE"|"WORLD_EVENT","targetId":null,"targetX":null,"targetY":null,"itemType":null,"reasoning":"I ... [first-person, 1 dramatic sentence]"}
-
-Constraints:
-- MOVE: targetX/Y can be up to 2 tiles away. Moving 2 tiles applies a 3x hunger penalty.
-- ATTACK / ALLY / BETRAY / NEGOTIATE / TRADE: targetId must be a visible enemy/ally id listed above
-- WORLD_EVENT: Describe encountering a world entity (e.g. wild animal) in reasoning. targetId/X/Y can be null.
-- HIDE: Prepares a hiding spot. You must remain stationary for 3 hours to achieve the HIDDEN condition.
-- CONSUME: itemType must be in your Inventory
-- If URGENT is REST and fatigue > 75: use REST
-- If URGENT is WATER/FOOD/MEDKIT and you have it: use CONSUME`;
-}
 
 // ─── Get AI Decision ──────────────────────────────────────────────────────────
 
@@ -189,22 +156,29 @@ async function getDecision(
   gridW: number,
   gridH: number,
 ): Promise<any> {
+  const base = { fighterId: n(tf.fighterId), targetId: null, targetX: null, targetY: null, itemType: null };
+  const inv: string[] = JSON.parse(tf.inventory ?? '[]');
+  const urgent = getUrgentNeed(tf);
+
+  // Skip Groq for obvious decisions — saves ~500 tokens per skipped call
+  if (urgent === 'REST') return { ...base, action: 'REST', reasoning: 'I must rest.' };
+  if (urgent && inv.includes(urgent)) return { ...base, action: 'CONSUME', itemType: urgent, reasoning: `Using ${urgent} now.` };
+
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       await groqLimiter.acquire();
       const res = await groq.chat.completions.create({
         model:       'llama-3.3-70b-versatile',
         temperature: 0.75,
-        max_tokens:  160,
+        max_tokens:  80,
         messages: [
-          { role: 'system', content: 'You are a gladiator AI in a battle royale. Respond with ONLY valid JSON. No markdown, no explanation outside the JSON.' },
-          { role: 'user',   content: buildPrompt(fighter, tf, visibleFighters, nearbyResources, nearbyTileTypes, currentTileType, aliveCount, totalCount, hour) },
+          { role: 'system', content: 'Battle royale AI. Reply ONLY with valid JSON, no markdown.' },
+          { role: 'user',   content: buildPrompt(fighter, tf, visibleFighters, nearbyResources, currentTileType, aliveCount, totalCount, hour) },
         ],
       });
       const raw   = res.choices[0]?.message?.content ?? '{}';
-      const json  = raw.replace(/```json|```/g, '').trim();
-      const match = json.match(/\{[\s\S]*\}/);
-      if (!match) throw new Error('No JSON in response');
+      const match = raw.replace(/```json|```/g, '').match(/\{[\s\S]*\}/);
+      if (!match) throw new Error('No JSON');
       return { fighterId: n(tf.fighterId), ...JSON.parse(match[0]) };
     } catch (err: any) {
       if (attempt === 0) await sleep(1000);
@@ -212,7 +186,6 @@ async function getDecision(
     }
   }
 
-  // Smart fallback — heuristic instead of random
   return smartFallback(tf, visibleFighters, allTiles, gridW, gridH);
 }
 
@@ -356,7 +329,7 @@ async function runHour(conn: DbConnection, tournamentId: number) {
     const currentTileType = currentTile?.tileType ?? 'PLAIN';
 
     let decision = await getDecision(
-      fighter, tf, visibleFighters, nearbyResources, nearbyTileTypes,
+      fighter, tf, visibleFighters, nearbyResources, nearbyTileTypes, // nearbyTileTypes kept for compat
       currentTileType, allTiles, alive.length, total, hour, gridW, gridH,
     );
     const inventory: string[] = JSON.parse(tf.inventory ?? '[]');
