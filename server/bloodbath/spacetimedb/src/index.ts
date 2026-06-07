@@ -184,6 +184,19 @@ const auctionBid = table(
   }
 );
 
+const auction = table(
+  { name: 'auction', public: true },
+  {
+    id: t.u32().primaryKey().autoInc(),
+    fighterId: t.u32(),
+    openedBy: t.identity(),
+    startedAt: t.timestamp(),
+    // microseconds since unix epoch — allows easy arithmetic
+    endsAtMicros: t.u64(),
+    settled: t.bool(),
+  }
+);
+
 const notification = table(
   {
     name: 'notification',
@@ -250,7 +263,7 @@ const tournamentRegistration = table(
 const spacetimedb = schema({
   user, fighterTemplate, tournament, arenaTile,
   tournamentFighter, bet, sponsorDrop, liveEvent,
-  contract, auctionBid, friendship, notification,
+  contract, auctionBid, auction, friendship, notification,
   eventBetSlip, eventBetPosition, tournamentRegistration,
 });
 
@@ -443,6 +456,28 @@ function endTournament(ctx: any, tournament: any, survivors: any[], hour: number
   settleBets(ctx, tournament.id, winnerId);
   ctx.db.tournament.id.update({ ...tournament, status: 'COMPLETED' });
   if (winner) ctx.db.fighterTemplate.id.update({ ...winner, wins: winner.wins + 1 });
+
+  // Pay contract holders: winner earns 25% of prize pool, participants earn a flat fee
+  const prizePool = Number(tournament.prizePool ?? 0);
+  const allContractsInPlay = [...ctx.db.contract.iter()].filter((c: any) => {
+    const tf = [...ctx.db.tournamentFighter.iter()].find((x: any) =>
+      Number(x.tournamentId) === Number(tournament.id) && Number(x.fighterId) === Number(c.fighterId)
+    );
+    return !!tf;
+  });
+  for (const c of allContractsInPlay) {
+    const isWinner = Number(c.fighterId) === Number(winnerId);
+    const payout = isWinner ? Math.round(prizePool * 0.25) : 50;
+    const newRemaining = Math.max(0, Number(c.tournamentsRemaining) - 1);
+    const newEarned = Number(c.totalEarned) + payout;
+    const owner = ctx.db.user.identity.find(c.userId);
+    if (owner) ctx.db.user.identity.update({ ...owner, balance: owner.balance + payout });
+    if (newRemaining === 0) {
+      ctx.db.contract.id.delete(c.id);
+    } else {
+      ctx.db.contract.id.update({ ...c, tournamentsRemaining: newRemaining, totalEarned: newEarned });
+    }
+  }
 
   // Award + auto-spend points for every fighter that participated
   const allTfForPts = [...ctx.db.tournamentFighter.iter()]
@@ -1278,14 +1313,119 @@ export const hostTournament = spacetimedb.reducer(
   }
 );
 
+function nowMicros(ctx: any): bigint {
+  return BigInt((ctx.timestamp as any).__timestamp_micros_since_unix_epoch__ ?? 0n);
+}
+
+export const openAuction = spacetimedb.reducer(
+  { name: 'openAuction' },
+  { fighterId: t.u32(), durationHours: t.u32() },
+  (ctx, { fighterId, durationHours }) => {
+    const user = ctx.db.user.identity.find(ctx.sender);
+    if (!user) throw new SenderError('Not registered');
+    if (!user.isAdmin) throw new SenderError('Admin only');
+    const fighter = ctx.db.fighterTemplate.id.find(fighterId);
+    if (!fighter) throw new SenderError('Fighter not found');
+    const contracted = [...ctx.db.contract.iter()].find((c: any) => Number(c.fighterId) === fighterId);
+    if (contracted) throw new SenderError('Fighter already under contract');
+    const existing = [...ctx.db.auction.iter()].find((a: any) => Number(a.fighterId) === fighterId && !a.settled);
+    if (existing) throw new SenderError('Auction already active for this fighter');
+    const hours = Math.min(Math.max(Number(durationHours), 1), 168);
+    const endsAtMicros = nowMicros(ctx) + BigInt(hours) * 3_600_000_000n;
+    ctx.db.auction.insert({ id: 0, fighterId, openedBy: ctx.sender, startedAt: ctx.timestamp, endsAtMicros, settled: false });
+  }
+);
+
 export const placeBid = spacetimedb.reducer(
   { name: 'placeBid' },
   { fighterId: t.u32(), amount: t.f64() },
   (ctx, { fighterId, amount }) => {
     const user = ctx.db.user.identity.find(ctx.sender);
     if (!user) throw new SenderError('Not registered');
+    if (amount <= 0) throw new SenderError('Bid must be positive');
+
+    const activeAuction = [...ctx.db.auction.iter()].find((a: any) => Number(a.fighterId) === fighterId && !a.settled);
+    if (!activeAuction) throw new SenderError('No active auction for this fighter');
+    if (nowMicros(ctx) > BigInt(activeAuction.endsAtMicros)) throw new SenderError('Auction has ended — call settleAuction');
+
+    const contracted = [...ctx.db.contract.iter()].find((c: any) => Number(c.fighterId) === fighterId);
+    if (contracted) throw new SenderError('Fighter is already under contract');
+
+    const bidsForFighter = [...ctx.db.auctionBid.iter()].filter((b: any) => Number(b.fighterId) === fighterId);
+    const highestBid = bidsForFighter.reduce((max: number, b: any) => Math.max(max, Number(b.amount)), 0);
+    if (amount <= highestBid) throw new SenderError(`Bid must exceed current highest of $${highestBid.toFixed(2)}`);
+
     if (user.balance < amount) throw new SenderError('Insufficient funds');
+
+    // Replace caller's existing bid if any (only one bid per user per fighter)
+    const myBid = bidsForFighter.find((b: any) => b.bidderId.toHexString() === ctx.sender.toHexString());
+    if (myBid) ctx.db.auctionBid.id.delete(myBid.id);
+
     ctx.db.auctionBid.insert({ id: 0, fighterId, bidderId: ctx.sender, amount, placedAt: ctx.timestamp });
+  }
+);
+
+export const cancelBid = spacetimedb.reducer(
+  { name: 'cancelBid' },
+  { fighterId: t.u32() },
+  (ctx, { fighterId }) => {
+    const activeAuction = [...ctx.db.auction.iter()].find((a: any) => Number(a.fighterId) === fighterId && !a.settled);
+    if (!activeAuction) throw new SenderError('No active auction');
+    if (nowMicros(ctx) > BigInt(activeAuction.endsAtMicros)) throw new SenderError('Auction ended — cannot cancel');
+    const myBid = [...ctx.db.auctionBid.iter()].find((b: any) =>
+      Number(b.fighterId) === fighterId && b.bidderId.toHexString() === ctx.sender.toHexString()
+    );
+    if (!myBid) throw new SenderError('No bid found for this fighter');
+    ctx.db.auctionBid.id.delete(myBid.id);
+  }
+);
+
+export const settleAuction = spacetimedb.reducer(
+  { name: 'settleAuction' },
+  { fighterId: t.u32() },
+  (ctx, { fighterId }) => {
+    const activeAuction = [...ctx.db.auction.iter()].find((a: any) => Number(a.fighterId) === fighterId && !a.settled);
+    if (!activeAuction) throw new SenderError('No active auction to settle');
+    if (nowMicros(ctx) <= BigInt(activeAuction.endsAtMicros)) throw new SenderError('Auction has not ended yet');
+
+    const bidsForFighter = [...ctx.db.auctionBid.iter()].filter((b: any) => Number(b.fighterId) === fighterId);
+    if (bidsForFighter.length === 0) {
+      // No bids — mark settled with no winner
+      ctx.db.auction.id.update({ ...activeAuction, settled: true });
+      return;
+    }
+
+    // Find highest bidder
+    const winner = bidsForFighter.reduce((best: any, b: any) => Number(b.amount) > Number(best.amount) ? b : best);
+    const winnerUser = ctx.db.user.identity.find(winner.bidderId);
+    if (!winnerUser) {
+      ctx.db.auction.id.update({ ...activeAuction, settled: true });
+      return;
+    }
+    if (winnerUser.balance < Number(winner.amount)) throw new SenderError('Winner has insufficient funds');
+
+    ctx.db.user.identity.update({ ...winnerUser, balance: winnerUser.balance - Number(winner.amount) });
+    ctx.db.contract.insert({
+      id: 0,
+      userId: winner.bidderId,
+      fighterId,
+      tournamentsRemaining: 3,
+      totalEarned: 0,
+      createdAt: ctx.timestamp,
+    });
+
+    // Clear all bids for this fighter
+    for (const b of bidsForFighter) ctx.db.auctionBid.id.delete(b.id);
+
+    ctx.db.auction.id.update({ ...activeAuction, settled: true });
+
+    // Notify winner
+    ctx.db.notification.insert({
+      id: 0, recipientId: winner.bidderId, kind: 'SYSTEM',
+      title: 'Contract Secured!',
+      body: `You won the auction for fighter #${fighterId} with a bid of $${Number(winner.amount).toFixed(2)}!`,
+      relatedId: undefined, read: false, createdAt: ctx.timestamp,
+    });
   }
 );
 

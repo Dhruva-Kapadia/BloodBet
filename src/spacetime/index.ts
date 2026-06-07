@@ -46,6 +46,9 @@ import MarkAllNotificationsReadReducer from "./mark_all_notifications_read_reduc
 import MarkNotificationReadReducer from "./mark_notification_read_reducer";
 import PlaceBetReducer from "./place_bet_reducer";
 import PlaceBidReducer from "./place_bid_reducer";
+import CancelBidReducer from "./cancel_bid_reducer";
+import OpenAuctionReducer from "./open_auction_reducer";
+import SettleAuctionReducer from "./settle_auction_reducer";
 import RegisterForTournamentReducer from "./register_for_tournament_reducer";
 import RegisterUserReducer from "./register_user_reducer";
 import RemoveFriendReducer from "./remove_friend_reducer";
@@ -66,6 +69,7 @@ import VerifyLoginReducer from "./verify_login_reducer";
 // Import all table schema definitions
 import ArenaTileRow from "./arena_tile_table";
 import AuctionBidRow from "./auction_bid_table";
+import AuctionRow from "./auction_table";
 import BetRow from "./bet_table";
 import ContractRow from "./contract_table";
 import EventBetPositionRow from "./event_bet_position_table";
@@ -112,6 +116,17 @@ const tablesSchema = __schema({
       { name: 'auctionBid_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, AuctionBidRow),
+  auction: __table({
+    name: 'auction',
+    indexes: [
+      { accessor: 'id', name: 'auction_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'auction_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, AuctionRow),
   bet: __table({
     name: 'bet',
     indexes: [
@@ -325,6 +340,9 @@ const reducersSchema = __reducers(
   __reducerSchema("markNotificationRead", MarkNotificationReadReducer),
   __reducerSchema("placeBet", PlaceBetReducer),
   __reducerSchema("placeBid", PlaceBidReducer),
+  __reducerSchema("cancelBid", CancelBidReducer),
+  __reducerSchema("openAuction", OpenAuctionReducer),
+  __reducerSchema("settleAuction", SettleAuctionReducer),
   __reducerSchema("registerForTournament", RegisterForTournamentReducer),
   __reducerSchema("registerUser", RegisterUserReducer),
   __reducerSchema("removeFriend", RemoveFriendReducer),

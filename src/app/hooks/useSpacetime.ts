@@ -31,6 +31,7 @@ export function useSpacetime() {
   const [sponsorDrops, setSponsorDrops]             = useState<any[]>([]);
   const [contracts, setContracts]                   = useState<any[]>([]);
   const [auctionBids, setAuctionBids]               = useState<any[]>([]);
+  const [auctions, setAuctions]                     = useState<any[]>([]);
   const [users, setUsers]                           = useState<any[]>([]);
   const [friendships, setFriendships]               = useState<any[]>([]);
   const [notifications, setNotifications]           = useState<any[]>([]);
@@ -61,6 +62,7 @@ export function useSpacetime() {
             setSponsorDrops(normalizeAll(ctx.db.sponsorDrop.iter()));
             setContracts(normalizeAll(ctx.db.contract.iter()));
             setAuctionBids(normalizeAll(ctx.db.auctionBid.iter()));
+            setAuctions(normalizeAll(ctx.db.auction.iter()));
             setUsers(normalizeAll(ctx.db.user.iter()));
             setFriendships(normalizeAll(ctx.db.friendship.iter()));
             setNotifications(normalizeAll(ctx.db.notification.iter()).filter(n => n.recipientId?.toHexString?.() === id.toHexString()));
@@ -82,6 +84,7 @@ export function useSpacetime() {
             tables.sponsorDrop,
             tables.contract,
             tables.auctionBid,
+            tables.auction,
             tables.friendship,
             tables.notification,
             tables.eventBetSlip,
@@ -109,6 +112,9 @@ export function useSpacetime() {
         ctx.db.contract.onInsert(()          => setContracts(normalizeAll(ctx.db.contract.iter())));
         ctx.db.contract.onUpdate(()          => setContracts(normalizeAll(ctx.db.contract.iter())));
         ctx.db.auctionBid.onInsert(()        => setAuctionBids(normalizeAll(ctx.db.auctionBid.iter())));
+        ctx.db.auctionBid.onDelete(()        => setAuctionBids(normalizeAll(ctx.db.auctionBid.iter())));
+        ctx.db.auction.onInsert(()           => setAuctions(normalizeAll(ctx.db.auction.iter())));
+        ctx.db.auction.onUpdate(()           => setAuctions(normalizeAll(ctx.db.auction.iter())));
         ctx.db.friendship.onInsert(()        => setFriendships(normalizeAll(ctx.db.friendship.iter())));
         ctx.db.friendship.onUpdate(()        => setFriendships(normalizeAll(ctx.db.friendship.iter())));
         ctx.db.friendship.onDelete(()        => setFriendships(normalizeAll(ctx.db.friendship.iter())));
@@ -200,6 +206,18 @@ export function useSpacetime() {
     conn?.reducers.placeBid({ fighterId, amount });
   }, [conn]);
 
+  const cancelBid = useCallback((fighterId: number) => {
+    conn?.reducers.cancelBid({ fighterId });
+  }, [conn]);
+
+  const openAuction = useCallback((fighterId: number, durationHours: number) => {
+    conn?.reducers.openAuction({ fighterId, durationHours });
+  }, [conn]);
+
+  const settleAuction = useCallback((fighterId: number) => {
+    conn?.reducers.settleAuction({ fighterId });
+  }, [conn]);
+
   const updateProfile = useCallback((bio: string, avatarEmoji: string, favoriteArchetype: string) => {
     if (!conn) return Promise.reject(new Error('Not connected to the arena yet'));
     return conn.reducers.updateProfile({ bio, avatarEmoji, favoriteArchetype });
@@ -264,11 +282,11 @@ export function useSpacetime() {
   return {
     conn, identity, connected, currentUser,
     fighters, tournaments, tournamentFighters, arenaTiles,
-    bets, liveEvents, sponsorDrops, contracts, auctionBids, users, friendships, notifications,
+    bets, liveEvents, sponsorDrops, contracts, auctionBids, auctions, users, friendships, notifications,
     eventBetSlips, eventBetPositions,
     tournamentRegistrations,
     register, verifyLogin, updateAccount, placeBet, sponsorFighter,
-    createTournament, createFighter, hostTournament, placeBid, logout,
+    createTournament, createFighter, hostTournament, placeBid, cancelBid, openAuction, settleAuction, logout,
     updateProfile, sendFriendRequest, respondToFriendRequest, removeFriend,
     markNotificationRead, markAllNotificationsRead,
     createEventBetSlip, joinEventBetSlip,
