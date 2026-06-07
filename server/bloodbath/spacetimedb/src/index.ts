@@ -225,6 +225,9 @@ const eventBetPosition = table(
     side:     t.string(), // FOR, AGAINST
     amount:   t.f64(),
     placedAt: t.timestamp(),
+  }
+);
+
 const tournamentRegistration = table(
   {
     name: 'tournamentRegistration',
