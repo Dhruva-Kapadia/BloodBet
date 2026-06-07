@@ -11,5 +11,6 @@ import {
 } from "spacetimedb";
 
 export default {
-  tournamentId: __t.u32(),
+  friendshipId: __t.u32(),
+  accept: __t.bool(),
 };

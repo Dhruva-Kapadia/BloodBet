@@ -11,5 +11,7 @@ import {
 } from "spacetimedb";
 
 export default {
-  tournamentId: __t.u32(),
+  bio: __t.string(),
+  avatarEmoji: __t.string(),
+  favoriteArchetype: __t.string(),
 };

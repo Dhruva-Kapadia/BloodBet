@@ -11,5 +11,5 @@ import {
 } from "spacetimedb";
 
 export default {
-  tournamentId: __t.u32(),
+  addresseeId: __t.identity(),
 };
