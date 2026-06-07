@@ -3,11 +3,29 @@ import { DbConnection } from '../../src/spacetime';
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
+// Sliding-window rate limiter — Groq free tier: 30 RPM
+class RateLimiter {
+  private calls: number[] = [];
+  constructor(private readonly rpm: number) {}
+  async acquire() {
+    const now = Date.now();
+    this.calls = this.calls.filter(t => now - t < 60_000);
+    if (this.calls.length >= this.rpm) {
+      const wait = 60_000 - (now - this.calls[0]) + 200;
+      console.log(`  ⏳ Groq rate limit — waiting ${(wait / 1000).toFixed(1)}s…`);
+      await sleep(wait);
+      this.calls = this.calls.filter(t => Date.now() - t < 60_000);
+    }
+    this.calls.push(Date.now());
+  }
+}
+const groqLimiter = new RateLimiter(28); // 28 RPM — 2 below limit as buffer
+
 const SPACETIME_URI     = process.env.SPACETIMEDB_HOST || 'wss://maincloud.spacetimedb.com';
 const DB_NAME           = process.env.SPACETIMEDB_DB_NAME || 'bloodbet-dre-dev';
-const HOUR_INTERVAL_MS  = 15_000;   // 15 s per in-game hour
-const BETTING_WINDOW_MS = 5 * 60 * 1000; // 5 min betting window
-const AI_CONCURRENCY    = 4;        // parallel Groq calls
+const HOUR_INTERVAL_MS  = 15_000;
+const BETTING_WINDOW_MS = 5 * 60 * 1000;
+const AI_CONCURRENCY    = 4;
 
 const ARENA_TYPES = [
   'ARCTIC WASTELAND', 'JUNGLE LABYRINTH',
@@ -171,8 +189,9 @@ async function getDecision(
   gridW: number,
   gridH: number,
 ): Promise<any> {
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 2; attempt++) {
     try {
+      await groqLimiter.acquire();
       const res = await groq.chat.completions.create({
         model:       'llama-3.3-70b-versatile',
         temperature: 0.75,
@@ -182,23 +201,14 @@ async function getDecision(
           { role: 'user',   content: buildPrompt(fighter, tf, visibleFighters, nearbyResources, nearbyTileTypes, currentTileType, aliveCount, totalCount, hour) },
         ],
       });
-
-      const raw  = res.choices[0]?.message?.content ?? '{}';
-      const json = raw.replace(/```json|```/g, '').trim();
-      // Extract first JSON object if model adds extra text
+      const raw   = res.choices[0]?.message?.content ?? '{}';
+      const json  = raw.replace(/```json|```/g, '').trim();
       const match = json.match(/\{[\s\S]*\}/);
       if (!match) throw new Error('No JSON in response');
       return { fighterId: n(tf.fighterId), ...JSON.parse(match[0]) };
     } catch (err: any) {
-      if (err?.status === 429) {
-        const wait = (parseInt(err?.headers?.['retry-after'] ?? '6') + 1) * 1000;
-        console.log(`  ⏳ Rate limit for ${fighter.name}, waiting ${wait / 1000}s…`);
-        await sleep(wait);
-      } else if (attempt < 2) {
-        await sleep(800 * (attempt + 1));
-      } else {
-        console.error(`  ❌ AI failed for ${fighter.name}:`, err?.message ?? err);
-      }
+      if (attempt === 0) await sleep(1000);
+      else console.error(`  ❌ AI failed for ${fighter.name}:`, err?.message ?? err);
     }
   }
 

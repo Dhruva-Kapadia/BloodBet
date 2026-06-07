@@ -745,14 +745,10 @@ export const startTournament = spacetimedb.reducer(
       }
     }
 
-    const resourceTypes = ['FOOD', 'WATER', 'MEDKIT', 'WEAPON', 'ARMOR', 'INTEL'];
-    const resourceChance = 0.16 + stakeRoll * 0.1;
+    // All tiles start with NO loot — drops are revealed every 3 hours via advanceHour
     for (let x = 0; x < W; x++) {
       for (let y = 0; y < H; y++) {
-        const tileType = final[x][y];
-        const hasResource = false;
-        const resourceType = undefined;
-        ctx.db.arenaTile.insert({ id: 0, tournamentId: tournament.id, x, y, tileType, hasResource, resourceType });
+        ctx.db.arenaTile.insert({ id: 0, tournamentId: tournament.id, x, y, tileType: final[x][y], hasResource: false, resourceType: undefined });
       }
     }
     ctx.db.tournament.id.update({ ...tournament, gridWidth: W, gridHeight: H, prizePool, status: 'LIVE', currentHour: 1 });
@@ -839,25 +835,23 @@ export const advanceHour = spacetimedb.reducer(
       });
     }
 
-    // POI Reveal Logic
-    if (hour > 1 && hour % 3 === 0) {
-      const hiddenPois = allTiles.filter((t: any) => t.tileType === 'HIDDEN_POI');
-      if (hiddenPois.length > 0) {
-        const revealCount = Math.min(hiddenPois.length, ctx.random.integerInRange(2, 3));
-        const toReveal = hiddenPois
-          .map((t: any) => ({ t, sort: ctx.random() }))
-          .sort((a: any, b: any) => a.sort - b.sort)
-          .slice(0, revealCount).map((x: any) => x.t);
-        
-        for (const poi of toReveal) {
-          ctx.db.arenaTile.id.update({ ...poi, tileType: 'CORNUCOPIA', hasResource: true, resourceType: 'FOOD' });
-          poi.tileType = 'CORNUCOPIA'; // Update local ref
-          ctx.db.liveEvent.insert({
-            id: 0, tournamentId, hour, eventType: 'BROADCAST',
-            description: `A hidden Point of Interest has been revealed at (${poi.x}, ${poi.y})!`,
-            involvedIds: '[]', x: Number(poi.x), y: Number(poi.y), timestamp: ctx.timestamp,
-          });
-        }
+    // Every 3 hours reveal 2-3 new loot spots on empty tiles
+    if (hour % 3 === 0) {
+      const resourceTypes = ['FOOD','WATER','MEDKIT','WEAPON','ARMOR','INTEL'];
+      const emptyTiles = allTiles.filter((t: any) => !t.hasResource && t.tileType !== 'CORNUCOPIA');
+      const dropCount  = ctx.random.integerInRange(2, 3);
+      const shuffled   = emptyTiles
+        .map((t: any) => ({ t, sort: ctx.random() }))
+        .sort((a: any, b: any) => a.sort - b.sort)
+        .slice(0, dropCount);
+      for (const { t: tile } of shuffled) {
+        const resourceType = resourceTypes[ctx.random.integerInRange(0, resourceTypes.length - 1)];
+        ctx.db.arenaTile.id.update({ ...tile, hasResource: true, resourceType });
+        ctx.db.liveEvent.insert({
+          id: 0, tournamentId, hour, eventType: 'RESOURCE',
+          description: `📦 Loot drop revealed at (${Number(tile.x)},${Number(tile.y)}) — ${resourceType} spotted!`,
+          involvedIds: '[]', x: Number(tile.x), y: Number(tile.y), timestamp: ctx.timestamp,
+        });
       }
     }
 
