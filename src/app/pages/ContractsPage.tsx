@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Button } from '../components/Button';
 import { NavBar } from '../components/NavBar';
+import { FighterProfilePanel } from '../components/FighterProfilePanel';
 import { TrendingUp, Award } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useDB } from '../context/SpacetimeContext';
@@ -9,6 +10,24 @@ export function ContractsPage() {
   const { fighters, contracts, auctionBids, currentUser, identity, placeBid } = useDB();
   const [selectedFighter, setSelectedFighter] = useState<number | null>(null);
   const [bidAmount, setBidAmount] = useState('');
+  const [profileFighter, setProfileFighter] = useState<any>(null);
+
+  const enrichFighter = (f: any) => ({
+    id:        Number(f.id),
+    name:      String(f.name),
+    archetype: String(f.archetype),
+    lore:      String((f as any).lore ?? ''),
+    str:       Number(f.strength),
+    spd:       Number(f.speed),
+    int:       Number(f.intelligence),
+    lck:       Number(f.luck),
+    cha:       Number((f as any).charisma ?? 0),
+    wins:      Number(f.wins),
+    played:    Number(f.tournamentsPlayed),
+    points:    Number((f as any).totalPointsEarned ?? 0),
+    avatarUrl: String((f as any).avatarUrl ?? ''),
+    winRate:   f.tournamentsPlayed > 0 ? Math.round((Number(f.wins) / Number(f.tournamentsPlayed)) * 100) : 0,
+  });
 
   const fighterById = (id: number) => fighters.find(f => Number(f.id) === id);
 
@@ -22,6 +41,7 @@ export function ContractsPage() {
       return {
         id: Number(c.id),
         fighterName: fighter?.name ?? `Fighter #${c.fighterId}`,
+        fighterRaw: fighter ?? null,
         tournamentsRemaining,
         totalTournaments,
         earned,
@@ -42,6 +62,8 @@ export function ContractsPage() {
       return {
         id: fighterId,
         fighter: fighter.name,
+        fighterRaw: fighter,
+        avatarUrl: String((fighter as any).avatarUrl ?? ''),
         tournaments,
         wins,
         survivalRate,
@@ -114,15 +136,27 @@ export function ContractsPage() {
                 >
                   <div className="flex justify-between items-start mb-6">
                     <div>
-                      <h3 className="font-display text-2xl text-accent-gold mb-2">
+                      <h3
+                        className="font-display text-2xl text-accent-gold mb-2 cursor-pointer hover:underline"
+                        onClick={() => contract.fighterRaw && setProfileFighter(enrichFighter(contract.fighterRaw))}
+                      >
                         {contract.fighterName}
                       </h3>
                       <div className="font-mono text-sm text-text-secondary">
                         {contract.tournamentsRemaining} of {contract.totalTournaments} tournaments remaining
                       </div>
                     </div>
-                    <div className="w-16 h-16 bg-bg-tertiary border border-accent-gold flex items-center justify-center">
-                      <span className="text-2xl">⚔️</span>
+                    <div
+                      className="w-16 h-16 bg-bg-tertiary border border-accent-gold overflow-hidden cursor-pointer"
+                      onClick={() => contract.fighterRaw && setProfileFighter(enrichFighter(contract.fighterRaw))}
+                    >
+                      {(contract.fighterRaw as any)?.avatarUrl ? (
+                        <img src={String((contract.fighterRaw as any).avatarUrl)} alt={contract.fighterName} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <span className="text-2xl">⚔️</span>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -174,14 +208,24 @@ export function ContractsPage() {
                   className="bg-bg-secondary border border-separator inner-glow p-6 hover:border-accent-gold transition-all group"
                 >
                   {/* Fighter avatar */}
-                  <div className="w-full aspect-square bg-bg-tertiary mb-4 flex items-center justify-center">
-                    <div className="text-6xl text-accent-gold opacity-20 group-hover:opacity-40 transition-opacity">
-                      ⚔️
-                    </div>
+                  <div
+                    className="w-full aspect-square bg-bg-tertiary mb-4 overflow-hidden cursor-pointer"
+                    onClick={() => setProfileFighter(enrichFighter(listing.fighterRaw))}
+                  >
+                    {listing.avatarUrl ? (
+                      <img src={listing.avatarUrl} alt={listing.fighter} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <div className="text-6xl text-accent-gold opacity-20 group-hover:opacity-40 transition-opacity">⚔️</div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Fighter name */}
-                  <h3 className="font-display text-xl text-accent-gold mb-3">{listing.fighter}</h3>
+                  <h3
+                    className="font-display text-xl text-accent-gold mb-3 cursor-pointer hover:underline"
+                    onClick={() => setProfileFighter(enrichFighter(listing.fighterRaw))}
+                  >{listing.fighter}</h3>
 
                   {/* Career stats */}
                   <div className="grid grid-cols-3 gap-2 mb-4 font-mono text-xs">
@@ -297,6 +341,8 @@ export function ContractsPage() {
           </div>
         </div>
       </div>
+
+      <FighterProfilePanel fighter={profileFighter} onClose={() => setProfileFighter(null)} />
     </div>
   );
 }
