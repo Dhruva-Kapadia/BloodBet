@@ -176,9 +176,12 @@ function TournamentCard({
       )}
 
       {/* Card header — always visible */}
-      <button
-        className="w-full text-left px-6 py-4 flex items-center justify-between hover:bg-bg-tertiary/50 transition-colors"
+      <div
+        role="button"
+        tabIndex={0}
+        className="w-full text-left px-6 py-4 flex items-center justify-between hover:bg-bg-tertiary/50 transition-colors cursor-pointer"
         onClick={() => setExpanded((v: boolean) => !v)}
+        onKeyDown={e => e.key === 'Enter' && setExpanded((v: boolean) => !v)}
       >
         <div className="flex items-center gap-4">
           <div>
@@ -214,7 +217,7 @@ function TournamentCard({
           )}
           {expanded ? <ChevronUp className="w-4 h-4 text-text-secondary" /> : <ChevronDown className="w-4 h-4 text-text-secondary" />}
         </div>
-      </button>
+      </div>
 
       <AnimatePresence>
         {expanded && (
