@@ -3,9 +3,9 @@ import { useDB } from '../context/SpacetimeContext';
 import { Button } from './Button';
 import { motion, AnimatePresence } from 'motion/react';
 
-export function EventBetsPanel({ tournamentId }: { tournamentId: number }) {
+export function EventBetsPanel({ tournamentId, availableFighters }: { tournamentId: number, availableFighters: any[] }) {
   const {
-    currentUser, fighters,
+    currentUser, fighters, identity,
     eventBetSlips, eventBetPositions,
     createEventBetSlip, joinEventBetSlip
   } = useDB();
@@ -29,11 +29,7 @@ export function EventBetsPanel({ tournamentId }: { tournamentId: number }) {
   // Track join amounts per slip id
   const [joinAmounts, setJoinAmounts] = useState<Record<number, string>>({});
 
-  const activeSlipsUnsorted = eventBetSlips.filter(
-    (s: any) => Number(s.tournamentId) === tournamentId && s.status === 'OPEN'
-  );
-
-  const activeSlipsWithPool = activeSlipsUnsorted.map((slip: any) => {
+  const enrichSlip = (slip: any) => {
     const positions = eventBetPositions.filter(p => Number(p.slipId) === Number(slip.id));
     let poolFor = 0;
     let poolAgainst = 0;
@@ -42,9 +38,20 @@ export function EventBetsPanel({ tournamentId }: { tournamentId: number }) {
       else poolAgainst += Number(p.amount);
     });
     return { ...slip, totalPool: poolFor + poolAgainst, poolFor, poolAgainst, positions };
-  });
+  };
 
-  const activeSlips = activeSlipsWithPool.sort((a: any, b: any) => {
+  const activeSlipsUnsorted = eventBetSlips.filter(
+    (s: any) => Number(s.tournamentId) === tournamentId && s.status === 'OPEN'
+  );
+  
+  const resolvedSlipsUnsorted = eventBetSlips.filter(
+    (s: any) => Number(s.tournamentId) === tournamentId && (s.status === 'RESOLVED_YES' || s.status === 'RESOLVED_NO')
+  );
+
+  const activeSlipsWithPool = activeSlipsUnsorted.map(enrichSlip);
+  const resolvedSlipsWithPool = resolvedSlipsUnsorted.map(enrichSlip);
+
+  const sortSlips = (slips: any[]) => slips.sort((a: any, b: any) => {
     let diff = 0;
     if (sortBy === 'newest') {
       diff = Number(b.id) - Number(a.id);
@@ -53,6 +60,9 @@ export function EventBetsPanel({ tournamentId }: { tournamentId: number }) {
     }
     return sortDirection === 'asc' ? -diff : diff;
   });
+
+  const activeSlips = sortSlips(activeSlipsWithPool);
+  const resolvedSlips = resolvedSlipsWithPool.sort((a: any, b: any) => Number(b.id) - Number(a.id));
 
   const displayedSlips = showAll ? activeSlips : activeSlips.slice(0, 5);
 
@@ -83,12 +93,42 @@ export function EventBetsPanel({ tournamentId }: { tournamentId: number }) {
     joinEventBetSlip(slipId, joinSide, joinAmount);
   };
 
+  const renderResolvedSlip = (slip: any) => {
+    const f1 = fighters.find(f => Number(f.id) === Number(slip.fighter1Id))?.name || 'Unknown';
+    const f2 = Number(slip.fighter2Id) === 0 ? 'Anyone' : fighters.find(f => Number(f.id) === Number(slip.fighter2Id))?.name || 'Unknown';
+    
+    const isYes = slip.status === 'RESOLVED_YES';
+    const winningSide = isYes ? 'FOR' : 'AGAINST';
+    
+    return (
+      <div key={Number(slip.id)} className="bg-bg-tertiary border border-separator px-4 py-2 flex justify-between items-center text-sm">
+        <div className="font-heading uppercase text-text-primary">
+          {f1} <span className="text-accent-gold">{slip.action}</span> {f2}
+        </div>
+        <div className="flex items-center gap-4 font-mono text-xs">
+          <div className="text-text-secondary">
+            <span className={winningSide === 'FOR' ? 'text-green-400 font-bold' : ''}>FOR: ${slip.poolFor.toFixed(2)}</span>
+            {' | '}
+            <span className={winningSide === 'AGAINST' ? 'text-red-400 font-bold' : ''}>AG: ${slip.poolAgainst.toFixed(2)}</span>
+          </div>
+          <div className={`px-2 py-0.5 border ${isYes ? 'border-green-500/30 text-green-400' : 'border-red-500/30 text-red-400'}`}>
+            {winningSide} WON
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderSlip = (slip: any) => {
     const f1 = fighters.find(f => Number(f.id) === Number(slip.fighter1Id))?.name || 'Unknown';
     const f2 = Number(slip.fighter2Id) === 0 ? 'Anyone' : fighters.find(f => Number(f.id) === Number(slip.fighter2Id))?.name || 'Unknown';
     
     const oddsFor = slip.poolFor > 0 ? (slip.totalPool / slip.poolFor).toFixed(2) : '1.00';
     const oddsAgainst = slip.poolAgainst > 0 ? (slip.totalPool / slip.poolAgainst).toFixed(2) : '1.00';
+
+    const mySide = slip.positions.find((p: any) => p.userId?.toHexString?.() === identity)?.side;
+    const canBetFor = !mySide || mySide === 'FOR';
+    const canBetAgainst = !mySide || mySide === 'AGAINST';
 
     return (
       <div key={Number(slip.id)} className="bg-bg-tertiary border border-separator p-4">
@@ -115,7 +155,9 @@ export function EventBetsPanel({ tournamentId }: { tournamentId: number }) {
                   onChange={(e) => setJoinAmounts(prev => ({ ...prev, [Number(slip.id)]: e.target.value }))}
                 />
               </div>
-              <Button size="sm" onClick={() => handleJoin(Number(slip.id), 'FOR', Number(joinAmounts[Number(slip.id)] ?? 5))}>Place Bet</Button>
+              <Button size="sm" disabled={!canBetFor} onClick={() => handleJoin(Number(slip.id), 'FOR', Number(joinAmounts[Number(slip.id)] ?? 5))}>
+                {canBetFor ? 'Place Bet' : 'Opposing Bet Placed'}
+              </Button>
             </div>
           </div>
 
@@ -137,7 +179,9 @@ export function EventBetsPanel({ tournamentId }: { tournamentId: number }) {
                   onChange={(e) => setJoinAmounts(prev => ({ ...prev, [Number(slip.id)]: e.target.value }))}
                 />
               </div>
-              <Button size="sm" onClick={() => handleJoin(Number(slip.id), 'AGAINST', Number(joinAmounts[Number(slip.id)] ?? 5))}>Place Bet</Button>
+              <Button size="sm" disabled={!canBetAgainst} onClick={() => handleJoin(Number(slip.id), 'AGAINST', Number(joinAmounts[Number(slip.id)] ?? 5))}>
+                {canBetAgainst ? 'Place Bet' : 'Opposing Bet Placed'}
+              </Button>
             </div>
           </div>
         </div>
@@ -164,7 +208,7 @@ export function EventBetsPanel({ tournamentId }: { tournamentId: number }) {
               <label className="block font-mono text-xs text-text-secondary uppercase mb-1">Character 1</label>
               <select className="w-full bg-bg-primary border border-separator p-2 font-mono text-sm" value={fighter1Id} onChange={e => setFighter1Id(e.target.value)}>
                 <option value="">Select Fighter...</option>
-                {fighters.map(f => <option key={Number(f.id)} value={Number(f.id)}>{f.name}</option>)}
+                {availableFighters.map(f => <option key={Number(f.id)} value={Number(f.id)}>{f.name}</option>)}
               </select>
             </div>
             <div>
@@ -179,7 +223,7 @@ export function EventBetsPanel({ tournamentId }: { tournamentId: number }) {
               <label className="block font-mono text-xs text-text-secondary uppercase mb-1">Character 2 / Any</label>
               <select className="w-full bg-bg-primary border border-separator p-2 font-mono text-sm" value={fighter2Id} onChange={e => setFighter2Id(e.target.value)}>
                 <option value="0">Any / Anyone</option>
-                {fighters.map(f => <option key={Number(f.id)} value={Number(f.id)}>{f.name}</option>)}
+                {availableFighters.map(f => <option key={Number(f.id)} value={Number(f.id)}>{f.name}</option>)}
               </select>
             </div>
             <div>
@@ -240,8 +284,17 @@ export function EventBetsPanel({ tournamentId }: { tournamentId: number }) {
       {activeSlips.length > 5 && !showAll && (
         <div className="mt-6 text-center">
           <Button variant="secondary" onClick={() => setShowAll(true)}>
-            Show All Event Bets ({activeSlips.length})
+            Show All Active Event Bets ({activeSlips.length})
           </Button>
+        </div>
+      )}
+
+      {resolvedSlips.length > 0 && (
+        <div className="mt-8">
+          <h4 className="font-heading text-sm text-text-secondary uppercase mb-3">Resolved Event Bets</h4>
+          <div className="space-y-2">
+            {resolvedSlips.map(renderResolvedSlip)}
+          </div>
         </div>
       )}
 
@@ -285,6 +338,14 @@ export function EventBetsPanel({ tournamentId }: { tournamentId: number }) {
 
               <div className="p-6 overflow-y-auto space-y-4 bg-bg-primary flex-1">
                 {activeSlips.map(renderSlip)}
+                {resolvedSlips.length > 0 && (
+                  <div className="mt-8">
+                    <h4 className="font-heading text-sm text-text-secondary uppercase mb-3">Resolved Event Bets</h4>
+                    <div className="space-y-2">
+                      {resolvedSlips.map(renderResolvedSlip)}
+                    </div>
+                  </div>
+                )}
               </div>
             </motion.div>
           </motion.div>

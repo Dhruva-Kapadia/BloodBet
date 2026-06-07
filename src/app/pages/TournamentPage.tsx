@@ -52,7 +52,7 @@ function useNow() {
 }
 
 // Rename windowMs to avoid duplicate naming collisions if needed
-function countdown(createdAtTs: any, now: number, windowMs = 30 * 60 * 1000): string {
+function countdown(createdAtTs: any, now: number, windowMs = 5 * 60 * 1000): string {
   const micros = createdAtTs?.microsSinceUnixEpoch;
   if (!micros) return '--:--';
   const end = Number(micros) / 1000 + windowMs;
@@ -64,12 +64,11 @@ function countdown(createdAtTs: any, now: number, windowMs = 30 * 60 * 1000): st
 
 // ─── Single tournament card (expanded view) ──────────────────────────────────
 
-// Note: If 'activeTournament' or 'filteredEvents' from the betting branch 
-// are missing from props, make sure they are derived or destructured here.
+// ─── Single tournament card (expanded view) ──────────────────────────────────
 function TournamentCard({
   tournament, fighters, tournamentFighters, arenaTiles, bets, liveEvents,
   registrations, users, currentUser, identity, registerForTournament, unregisterFromTournament,
-  placeBet, defaultExpanded, activeTournament, filteredEvents = [],
+  placeBet, defaultExpanded,
 }: any) {
   const { play } = useSound();
   const navigate = useNavigate();
@@ -116,10 +115,11 @@ function TournamentCard({
 
   const aliveCount = roster.filter((e: any) => e.tf.isAlive).length;
   const tiles       = arenaTiles.filter((t: any) => Number(t.tournamentId) === tid);
-  const events      = liveEvents
+  const allEvents = liveEvents
     .filter((e: any) => Number(e.tournamentId) === tid)
-    .sort((a: any, b: any) => Number(b.id) - Number(a.id))
-    .slice(0, 25);
+    .sort((a: any, b: any) => Number(b.id) - Number(a.id));
+
+  const feedEvents = allEvents.filter((e: any) => e.eventType !== 'BROADCAST').slice(0, 25);
 
   const myBets = bets.filter((b: any) =>
     Number(b.tournamentId) === tid && b.userId?.toHexString?.() === identity
@@ -333,7 +333,7 @@ function TournamentCard({
                   height={Number(tournament.gridHeight ?? 12)}
                   tiles={tiles}
                   roster={roster}
-                  events={events}
+                  events={allEvents}
                   currentHour={Number(tournament.currentHour ?? 0)}
                   selectedFighterId={selectedFighter ? Number(selectedFighter.id) : null}
                   onSelectFighter={(id: number) => {
@@ -482,13 +482,13 @@ function TournamentCard({
                   {/* Event feed */}
                   <div className="bg-bg-tertiary border border-separator p-4">
                     <h3 className="font-heading text-xs uppercase text-accent-gold mb-3">Event Feed</h3>
-                    {events.length === 0 ? (
+                    {feedEvents.length === 0 ? (
                       <p className="font-mono text-xs text-text-secondary text-center py-3">
                         {isUpcoming ? 'Waiting for tournament to begin...' : 'No events yet.'}
                       </p>
                     ) : (
                       <div className="space-y-1.5 max-h-64 overflow-y-auto">
-                        {events.map((ev: any, i: number) => (
+                        {feedEvents.map((ev: any, i: number) => (
                           <motion.div
                             key={i}
                             initial={{ opacity: 0, x: 6 }}
@@ -513,20 +513,20 @@ function TournamentCard({
 
               {/* ─── Integrated from betting-overhaul branch ─── */}
               {/* Event Bets Panel */}
-              {activeTournament && <EventBetsPanel tournamentId={Number(activeTournament.id)} />}
+              {(isUpcoming || isLive) && <EventBetsPanel tournamentId={Number(tournament.id)} availableFighters={isLive ? roster.filter((r: any) => r.tf.isAlive).map((r: any) => r.fighter) : fighters} />}
 
               {/* Live Event Feed */}
               <div className="bg-bg-secondary border border-separator p-6 mt-6">
                 <h3 className="font-heading text-lg text-accent-gold mb-4 uppercase">
                   Live Event Feed
                 </h3>
-                {filteredEvents.length === 0 ? (
+                {feedEvents.length === 0 ? (
                   <div className="font-mono text-sm text-text-secondary text-center py-4">
                     Waiting for tournament to start...
                   </div>
                 ) : (
                   <div className="space-y-2 font-mono text-sm max-h-96 overflow-y-auto">
-                    {filteredEvents.map((event: any, i: number) => (
+                    {feedEvents.map((event: any, i: number) => (
                       <motion.div
                         key={i}
                         initial={{ opacity: 0, x: 10 }}

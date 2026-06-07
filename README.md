@@ -125,7 +125,7 @@ pnpm orchestrator
 ```
 Orchestrator creates UPCOMING tournament
     ↓
-2-minute betting window (users place bets)
+5-minute betting window (users register, place standard bets, and create dynamic Event Bets)
     ↓
 Tournament starts — 10 fighters spawn on 12×12 grid
     ↓
@@ -140,12 +140,16 @@ Server processes combat, resource collection, eliminations
     ↓
 Live events pushed to all connected users via WebSocket
     ↓
-Last fighter standing wins — bets settled automatically
+Orchestrator automatically resolves relevant Event Bets based on new events
+    ↓
+Last fighter standing wins — standard bets settled automatically
     ↓
 Next tournament created
 ```
 
 ### Betting Types
+
+#### Standard Bets (Fixed Odds)
 
 | Bet | Odds |
 |-----|------|
@@ -154,6 +158,12 @@ Next tournament created
 | Survives Day 1 | 1.8x |
 | Most Kills | 6.0x |
 | Forms Alliance | 2.1x |
+
+#### Dynamic Event Bets (Pari-Mutuel / Pool-Based)
+
+Users can create and join custom bets predicting specific micro-events during the tournament. These operate on a shared pool system where odds dynamically shift based on total funds placed on the "FOR" vs "AGAINST" sides.
+* **Examples:** "Fighter A KILLS Fighter B in the next 3 rounds", "Fighter C DIES", "Fighter D ALLIES WITH Anyone".
+* **Resolution:** The Orchestrator AI evaluates the live event feed and automatically resolves bets (`RESOLVED_YES` or `RESOLVED_NO`), dividing the total pool among the winning side proportionally.
 
 ### Sponsorship System
 

@@ -27,4 +27,6 @@ export default __t.row({
   alliances: __t.string(),
   kills: __t.u8(),
   eliminatedHour: __t.option(__t.u32()).name("eliminated_hour"),
+  lastInteractionHour: __t.u32().name("last_interaction_hour"),
+  stationaryHours: __t.u8().name("stationary_hours"),
 });

@@ -5,7 +5,7 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 const SPACETIME_URI     = process.env.SPACETIMEDB_HOST || 'wss://maincloud.spacetimedb.com';
 const DB_NAME           = process.env.SPACETIMEDB_DB_NAME || 'bloodbet-dre-dev';
-const HOUR_INTERVAL_MS  = 10_000;   // 10 s per in-game hour
+const HOUR_INTERVAL_MS  = 15_000;   // 15 s per in-game hour
 const BETTING_WINDOW_MS = 5 * 60 * 1000; // 5 min betting window
 const AI_CONCURRENCY    = 4;        // parallel Groq calls
 
@@ -141,12 +141,16 @@ DIRECTIVE: ${archetypeGuide[fighter.archetype] ?? 'Survive.'}
 PHASE ORDER: ${phase.instruction}
 ${urgentNeed ? `⚠️ URGENT NEED: ${urgentNeed} — address this immediately!` : ''}
 
+${hour - n(tf.lastInteractionHour) >= 12 ? 'CRITICAL INSTRUCTION: You MUST choose an interaction action (ATTACK, NEGOTIATE, TRADE, ALLY, WORLD_EVENT) for this fighter this turn. If no enemies are visible, you must force an encounter with a world entity by using WORLD_EVENT.' : ''}
+
 Respond with ONLY valid JSON, no markdown:
-{"action":"MOVE"|"REST"|"CONSUME"|"ATTACK"|"ALLY"|"BETRAY"|"HIDE","targetId":null,"targetX":null,"targetY":null,"itemType":null,"reasoning":"I ... [first-person, 1 dramatic sentence]"}
+{"action":"MOVE"|"REST"|"CONSUME"|"ATTACK"|"ALLY"|"BETRAY"|"HIDE"|"NEGOTIATE"|"TRADE"|"WORLD_EVENT","targetId":null,"targetX":null,"targetY":null,"itemType":null,"reasoning":"I ... [first-person, 1 dramatic sentence]"}
 
 Constraints:
-- MOVE: targetX/Y must be ADJACENT to your current position (±1 in one direction only, not diagonal)
-- ATTACK / ALLY / BETRAY: targetId must be a visible enemy/ally id listed above
+- MOVE: targetX/Y can be up to 2 tiles away. Moving 2 tiles applies a 3x hunger penalty.
+- ATTACK / ALLY / BETRAY / NEGOTIATE / TRADE: targetId must be a visible enemy/ally id listed above
+- WORLD_EVENT: Describe encountering a world entity (e.g. wild animal) in reasoning. targetId/X/Y can be null.
+- HIDE: Prepares a hiding spot. You must remain stationary for 3 hours to achieve the HIDDEN condition.
 - CONSUME: itemType must be in your Inventory
 - If URGENT is REST and fatigue > 75: use REST
 - If URGENT is WATER/FOOD/MEDKIT and you have it: use CONSUME`;
@@ -237,7 +241,7 @@ function validateDecision(
   d = { ...d };
 
   // Social actions need a valid visible target
-  if (['ATTACK', 'ALLY', 'BETRAY'].includes(d.action)) {
+  if (['ATTACK', 'ALLY', 'BETRAY', 'NEGOTIATE', 'TRADE'].includes(d.action)) {
     const valid = visibleFighters.some(f => n(f.fighterId) === n(d.targetId));
     if (!valid) {
       // Try to auto-select first visible enemy for ATTACK
@@ -245,11 +249,16 @@ function validateDecision(
         const allies: number[] = JSON.parse(tf.alliances ?? '[]');
         const enemy = visibleFighters.find(f => !allies.includes(n(f.fighterId)));
         if (enemy) { d.targetId = n(enemy.fighterId); }
-        else { d.action = 'HIDE'; d.targetId = null; }
+        else { d.action = 'WORLD_EVENT'; d.targetId = null; d.reasoning = 'A wild predator attacks from the shadows.'; }
       } else {
         d.action = 'REST'; d.targetId = null;
       }
     }
+  }
+
+  // WORLD_EVENT doesn't need a targetId.
+  if (d.action === 'WORLD_EVENT') {
+     d.targetId = null;
   }
 
   // CONSUME: item must be in inventory
@@ -261,7 +270,7 @@ function validateDecision(
     }
   }
 
-  // MOVE: must be adjacent (±1 in one axis only) and in bounds
+  // MOVE: must be within 2 tiles and in bounds
   if (d.action === 'MOVE') {
     if (d.targetX == null || d.targetY == null) {
       d.action = 'REST';
@@ -269,9 +278,10 @@ function validateDecision(
       const tx = clamp(n(d.targetX), 0, gridW - 1);
       const ty = clamp(n(d.targetY), 0, gridH - 1);
       const dx = tx - n(tf.x), dy = ty - n(tf.y);
-      // Enforce adjacency — AI sometimes teleports
-      const adjX = clamp(n(tf.x) + Math.sign(dx), 0, gridW - 1);
-      const adjY = clamp(n(tf.y) + Math.sign(dy), 0, gridH - 1);
+      // Enforce up to 2 tiles distance
+      const dist = Math.min(2, Math.max(Math.abs(dx), Math.abs(dy)));
+      const adjX = clamp(n(tf.x) + Math.sign(dx) * Math.min(dist, Math.abs(dx)), 0, gridW - 1);
+      const adjY = clamp(n(tf.y) + Math.sign(dy) * Math.min(dist, Math.abs(dy)), 0, gridH - 1);
       d.targetX = adjX; d.targetY = adjY;
     }
   }

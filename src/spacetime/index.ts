@@ -36,8 +36,8 @@ import {
 // Import all reducer arg schemas
 import AdminCreateTournamentReducer from "./admin_create_tournament_reducer";
 import AdvanceHourReducer from "./advance_hour_reducer";
-import CreateEventBetSlipReducer from "./create_event_bet_slip_reducer";
 import ClaimAdminReducer from "./claim_admin_reducer";
+import CreateEventBetSlipReducer from "./create_event_bet_slip_reducer";
 import CreateFighterReducer from "./create_fighter_reducer";
 import CreateTournamentReducer from "./create_tournament_reducer";
 import HostTournamentReducer from "./host_tournament_reducer";
@@ -315,12 +315,12 @@ const tablesSchema = __schema({
 const reducersSchema = __reducers(
   __reducerSchema("adminCreateTournament", AdminCreateTournamentReducer),
   __reducerSchema("advanceHour", AdvanceHourReducer),
+  __reducerSchema("claimAdmin", ClaimAdminReducer),
   __reducerSchema("createEventBetSlip", CreateEventBetSlipReducer),
   __reducerSchema("createFighter", CreateFighterReducer),
   __reducerSchema("createTournament", CreateTournamentReducer),
   __reducerSchema("hostTournament", HostTournamentReducer),
   __reducerSchema("joinEventBetSlip", JoinEventBetSlipReducer),
-  __reducerSchema("claimAdmin", ClaimAdminReducer),
   __reducerSchema("markAllNotificationsRead", MarkAllNotificationsReadReducer),
   __reducerSchema("markNotificationRead", MarkNotificationReadReducer),
   __reducerSchema("placeBet", PlaceBetReducer),

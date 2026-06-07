@@ -5,18 +5,18 @@ import { schema, table, t, SenderError } from 'spacetimedb/server';
 const user = table(
   { name: 'user', public: true },
   {
-    identity:          t.identity().primaryKey(),
-    username:          t.string(),
-    email:             t.string(),
-    passwordHash:      t.string(),
-    balance:           t.f64(),
+    identity: t.identity().primaryKey(),
+    username: t.string(),
+    email: t.string(),
+    passwordHash: t.string(),
+    balance: t.f64(),
     tournamentsHosted: t.u32(),
-    fightersOwned:     t.u32(),
-    createdAt:         t.timestamp(),
-    bio:               t.string(),
-    avatarEmoji:       t.string(),
+    fightersOwned: t.u32(),
+    createdAt: t.timestamp(),
+    bio: t.string(),
+    avatarEmoji: t.string(),
     favoriteArchetype: t.string(),
-    isAdmin:           t.bool(),
+    isAdmin: t.bool(),
   }
 );
 
@@ -27,65 +27,65 @@ const friendship = table(
     indexes: [{ accessor: 'by_pair', algorithm: 'btree', columns: ['requesterId', 'addresseeId'] }],
   },
   {
-    id:           t.u32().primaryKey().autoInc(),
-    requesterId:  t.identity().index('btree'),
-    addresseeId:  t.identity().index('btree'),
-    status:       t.string(), // PENDING | ACCEPTED
-    createdAt:    t.timestamp(),
+    id: t.u32().primaryKey().autoInc(),
+    requesterId: t.identity().index('btree'),
+    addresseeId: t.identity().index('btree'),
+    status: t.string(), // PENDING | ACCEPTED
+    createdAt: t.timestamp(),
   }
 );
 
 const fighterTemplate = table(
   { name: 'fighterTemplate', public: true },
   {
-    id:                t.u32().primaryKey().autoInc(),
-    name:              t.string(),
-    lore:              t.string(),
-    archetype:         t.string(),
+    id: t.u32().primaryKey().autoInc(),
+    name: t.string(),
+    lore: t.string(),
+    archetype: t.string(),
     // Stats start at 0 and grow through tournament performance + point spending
-    strength:          t.u8(),
-    speed:             t.u8(),
-    intelligence:      t.u8(),
-    luck:              t.u8(),
-    charisma:          t.u8(),
+    strength: t.u8(),
+    speed: t.u8(),
+    intelligence: t.u8(),
+    luck: t.u8(),
+    charisma: t.u8(),
     // Point economy
-    points:            t.u32(), // unspent points (usually 0 — auto-spent after each tournament)
+    points: t.u32(), // unspent points (usually 0 — auto-spent after each tournament)
     totalPointsEarned: t.u32(), // lifetime total for leaderboard display
     // Meta
-    wins:              t.u32(),
+    wins: t.u32(),
     tournamentsPlayed: t.u32(),
-    isUserCreated:     t.bool(),
-    ownerIdentity:     t.option(t.identity()),
-    avatarUrl:         t.string(), // DiceBear SVG URL chosen by archetype
+    isUserCreated: t.bool(),
+    ownerIdentity: t.option(t.identity()),
+    avatarUrl: t.string(), // DiceBear SVG URL chosen by archetype
   }
 );
 
 const tournament = table(
   { name: 'tournament', public: true },
   {
-    id:           t.u32().primaryKey().autoInc(),
-    name:         t.string(),
-    arenaType:    t.string(),
-    status:       t.string(),
-    currentHour:  t.u32(),
-    gridWidth:    t.u8(),
-    gridHeight:   t.u8(),
-    prizePool:    t.f64(),
+    id: t.u32().primaryKey().autoInc(),
+    name: t.string(),
+    arenaType: t.string(),
+    status: t.string(),
+    currentHour: t.u32(),
+    gridWidth: t.u8(),
+    gridHeight: t.u8(),
+    prizePool: t.f64(),
     hostIdentity: t.option(t.identity()),
     minEventBetAmount: t.f64(),
-    createdAt:    t.timestamp(),
+    createdAt: t.timestamp(),
   }
 );
 
 const arenaTile = table(
   { name: 'arenaTile', public: true },
   {
-    id:           t.u32().primaryKey().autoInc(),
+    id: t.u32().primaryKey().autoInc(),
     tournamentId: t.u32().index('btree'),
-    x:            t.u8(),
-    y:            t.u8(),
-    tileType:     t.string(),
-    hasResource:  t.bool(),
+    x: t.u8(),
+    y: t.u8(),
+    tileType: t.string(),
+    hasResource: t.bool(),
     resourceType: t.option(t.string()),
   }
 );
@@ -93,53 +93,55 @@ const arenaTile = table(
 const tournamentFighter = table(
   { name: 'tournamentFighter', public: true },
   {
-    id:             t.u32().primaryKey().autoInc(),
-    tournamentId:   t.u32().index('btree'),
-    fighterId:      t.u32().index('btree'),
-    isAlive:        t.bool(),
-    x:              t.u8(),
-    y:              t.u8(),
-    hunger:         t.u8(),
-    thirst:         t.u8(),
-    fatigue:        t.u8(),
-    injury:         t.u8(),
-    morale:         t.u8(),
-    condition:      t.string(),
-    inventory:      t.string(),
-    alliances:      t.string(),
-    kills:          t.u8(),
+    id: t.u32().primaryKey().autoInc(),
+    tournamentId: t.u32().index('btree'),
+    fighterId: t.u32().index('btree'),
+    isAlive: t.bool(),
+    x: t.u8(),
+    y: t.u8(),
+    hunger: t.u8(),
+    thirst: t.u8(),
+    fatigue: t.u8(),
+    injury: t.u8(),
+    morale: t.u8(),
+    condition: t.string(),
+    inventory: t.string(),
+    alliances: t.string(),
+    kills: t.u8(),
     eliminatedHour: t.option(t.u32()),
+    lastInteractionHour: t.u32(),
+    stationaryHours: t.u8(),
   }
 );
 
 const bet = table(
   { name: 'bet', public: true },
   {
-    id:           t.u32().primaryKey().autoInc(),
-    userId:       t.identity().index('btree'),
+    id: t.u32().primaryKey().autoInc(),
+    userId: t.identity().index('btree'),
     tournamentId: t.u32().index('btree'),
-    fighterId:    t.u32(),
-    betType:      t.string(),
-    amount:       t.f64(),
-    odds:         t.f64(),
-    status:       t.string(),
-    placedAt:     t.timestamp(),
+    fighterId: t.u32(),
+    betType: t.string(),
+    amount: t.f64(),
+    odds: t.f64(),
+    status: t.string(),
+    placedAt: t.timestamp(),
   }
 );
 
 const sponsorDrop = table(
   { name: 'sponsorDrop', public: true },
   {
-    id:           t.u32().primaryKey().autoInc(),
+    id: t.u32().primaryKey().autoInc(),
     tournamentId: t.u32().index('btree'),
-    userId:       t.identity(),
-    fighterId:    t.u32(),
-    itemType:     t.string(),
-    cost:         t.f64(),
-    status:       t.string(),
-    dropX:        t.option(t.u8()),
-    dropY:        t.option(t.u8()),
-    queuedHour:   t.u32(),
+    userId: t.identity(),
+    fighterId: t.u32(),
+    itemType: t.string(),
+    cost: t.f64(),
+    status: t.string(),
+    dropX: t.option(t.u8()),
+    dropY: t.option(t.u8()),
+    queuedHour: t.u32(),
     deliveryHour: t.u32(),
   }
 );
@@ -147,38 +149,38 @@ const sponsorDrop = table(
 const liveEvent = table(
   { name: 'liveEvent', public: true },
   {
-    id:           t.u32().primaryKey().autoInc(),
+    id: t.u32().primaryKey().autoInc(),
     tournamentId: t.u32().index('btree'),
-    hour:         t.u32(),
-    eventType:    t.string(),
-    description:  t.string(),
-    involvedIds:  t.string(),
-    x:            t.option(t.u8()),
-    y:            t.option(t.u8()),
-    timestamp:    t.timestamp(),
+    hour: t.u32(),
+    eventType: t.string(),
+    description: t.string(),
+    involvedIds: t.string(),
+    x: t.option(t.u8()),
+    y: t.option(t.u8()),
+    timestamp: t.timestamp(),
   }
 );
 
 const contract = table(
   { name: 'contract', public: true },
   {
-    id:                   t.u32().primaryKey().autoInc(),
-    userId:               t.identity().index('btree'),
-    fighterId:            t.u32(),
+    id: t.u32().primaryKey().autoInc(),
+    userId: t.identity().index('btree'),
+    fighterId: t.u32(),
     tournamentsRemaining: t.u8(),
-    totalEarned:          t.f64(),
-    createdAt:            t.timestamp(),
+    totalEarned: t.f64(),
+    createdAt: t.timestamp(),
   }
 );
 
 const auctionBid = table(
   { name: 'auctionBid', public: true },
   {
-    id:        t.u32().primaryKey().autoInc(),
+    id: t.u32().primaryKey().autoInc(),
     fighterId: t.u32().index('btree'),
-    bidderId:  t.identity(),
-    amount:    t.f64(),
-    placedAt:  t.timestamp(),
+    bidderId: t.identity(),
+    amount: t.f64(),
+    placedAt: t.timestamp(),
   }
 );
 
@@ -189,41 +191,41 @@ const notification = table(
     indexes: [{ accessor: 'by_recipient', algorithm: 'btree', columns: ['recipientId', 'createdAt'] }],
   },
   {
-    id:          t.u32().primaryKey().autoInc(),
+    id: t.u32().primaryKey().autoInc(),
     recipientId: t.identity().index('btree'),
-    kind:        t.string(), // TOURNAMENT | FRIEND_REQUEST | FRIEND_ACCEPTED
-    title:       t.string(),
-    body:        t.string(),
-    relatedId:   t.option(t.u32()),
-    read:        t.bool(),
-    createdAt:   t.timestamp(),
+    kind: t.string(), // TOURNAMENT | FRIEND_REQUEST | FRIEND_ACCEPTED
+    title: t.string(),
+    body: t.string(),
+    relatedId: t.option(t.u32()),
+    read: t.bool(),
+    createdAt: t.timestamp(),
   }
 );
 
 const eventBetSlip = table(
   { name: 'eventBetSlip', public: true },
   {
-    id:             t.u32().primaryKey().autoInc(),
-    tournamentId:   t.u32().index('btree'),
-    creatorId:      t.identity(),
-    fighter1Id:     t.u32(),
-    action:         t.string(), // KILLS, DIES, ALLIES_WITH
-    fighter2Id:     t.u32(),    // 0 for 'Any'
+    id: t.u32().primaryKey().autoInc(),
+    tournamentId: t.u32().index('btree'),
+    creatorId: t.identity(),
+    fighter1Id: t.u32(),
+    action: t.string(), // KILLS, DIES, ALLIES_WITH
+    fighter2Id: t.u32(),    // 0 for 'Any'
     roundsDuration: t.u32(),
-    startHour:      t.u32(),
-    status:         t.string(), // OPEN, RESOLVED_YES, RESOLVED_NO
-    createdAt:      t.timestamp(),
+    startHour: t.u32(),
+    status: t.string(), // OPEN, RESOLVED_YES, RESOLVED_NO
+    createdAt: t.timestamp(),
   }
 );
 
 const eventBetPosition = table(
   { name: 'eventBetPosition', public: true },
   {
-    id:       t.u32().primaryKey().autoInc(),
-    slipId:   t.u32().index('btree'),
-    userId:   t.identity(),
-    side:     t.string(), // FOR, AGAINST
-    amount:   t.f64(),
+    id: t.u32().primaryKey().autoInc(),
+    slipId: t.u32().index('btree'),
+    userId: t.identity(),
+    side: t.string(), // FOR, AGAINST
+    amount: t.f64(),
     placedAt: t.timestamp(),
   }
 );
@@ -235,10 +237,10 @@ const tournamentRegistration = table(
     indexes: [{ accessor: 'by_tournament', algorithm: 'btree', columns: ['tournamentId', 'userId'] }],
   },
   {
-    id:           t.u32().primaryKey().autoInc(),
+    id: t.u32().primaryKey().autoInc(),
     tournamentId: t.u32().index('btree'),
-    userId:       t.identity().index('btree'),
-    role:         t.string(), // 'VIEWER' | 'BETTOR'
+    userId: t.identity().index('btree'),
+    role: t.string(), // 'VIEWER' | 'BETTOR'
     registeredAt: t.timestamp(),
   }
 );
@@ -258,28 +260,28 @@ export default spacetimedb;
 
 // DiceBear avatar style per archetype
 const ARCHETYPE_AVATAR_STYLE: Record<string, string> = {
-  AGGRESSIVE:   'bottts',
-  STRATEGIC:    'adventurer',
-  COWARDLY:     'pixel-art',
-  DIPLOMATIC:   'avataaars',
-  BETRAYER:     'personas',
-  SURVIVALIST:  'micah',
+  AGGRESSIVE: 'adventurer',
+  STRATEGIC: 'adventurer',
+  COWARDLY: 'adventurer',
+  DIPLOMATIC: 'adventurer',
+  BETRAYER: 'adventurer',
+  SURVIVALIST: 'adventurer',
 };
 
 function avatarUrlFor(name: string, archetype: string): string {
-  const style = ARCHETYPE_AVATAR_STYLE[archetype] ?? 'identicon';
-  const seed  = encodeURIComponent(name);
+  const style = ARCHETYPE_AVATAR_STYLE[archetype] ?? 'adventurer';
+  const seed = encodeURIComponent(name);
   return `https://api.dicebear.com/9.x/${style}/svg?seed=${seed}`;
 }
 
 // Archetype stat-spending priority order (most to least preferred)
-const ARCHETYPE_PRIORITIES: Record<string, Array<'strength'|'speed'|'intelligence'|'luck'|'charisma'>> = {
-  AGGRESSIVE:   ['strength', 'speed',        'luck',          'intelligence', 'charisma'],
-  STRATEGIC:    ['intelligence', 'luck',      'charisma',      'strength',     'speed'],
-  COWARDLY:     ['speed',  'intelligence',    'luck',          'charisma',     'strength'],
-  DIPLOMATIC:   ['charisma', 'intelligence',  'luck',          'speed',        'strength'],
-  BETRAYER:     ['charisma', 'luck',          'intelligence',  'speed',        'strength'],
-  SURVIVALIST:  ['speed',  'luck',            'strength',      'intelligence', 'charisma'],
+const ARCHETYPE_PRIORITIES: Record<string, Array<'strength' | 'speed' | 'intelligence' | 'luck' | 'charisma'>> = {
+  AGGRESSIVE: ['strength', 'speed', 'luck', 'intelligence', 'charisma'],
+  STRATEGIC: ['intelligence', 'luck', 'charisma', 'strength', 'speed'],
+  COWARDLY: ['speed', 'intelligence', 'luck', 'charisma', 'strength'],
+  DIPLOMATIC: ['charisma', 'intelligence', 'luck', 'speed', 'strength'],
+  BETRAYER: ['charisma', 'luck', 'intelligence', 'speed', 'strength'],
+  SURVIVALIST: ['speed', 'luck', 'strength', 'intelligence', 'charisma'],
 };
 const STAT_CAP = 10;
 
@@ -315,12 +317,12 @@ function spendPointsOnStats(fighter: any, points: number): any {
 }
 
 function getCondition(hunger: number, thirst: number, fatigue: number, injury: number): string {
-  if (injury >= 80)  return 'CRITICAL';
-  if (injury >= 50)  return 'INJURED';
-  if (thirst >= 80)  return 'CRITICAL';
-  if (hunger >= 80)  return 'CRITICAL';
-  if (thirst >= 60)  return 'THIRSTY';
-  if (hunger >= 60)  return 'HUNGRY';
+  if (injury >= 80) return 'CRITICAL';
+  if (injury >= 50) return 'INJURED';
+  if (thirst >= 80) return 'CRITICAL';
+  if (hunger >= 80) return 'CRITICAL';
+  if (thirst >= 60) return 'THIRSTY';
+  if (hunger >= 60) return 'HUNGRY';
   if (fatigue >= 70) return 'TIRED';
   return 'STABLE';
 }
@@ -332,13 +334,13 @@ function clamp(v: number, min: number, max: number): number {
 function settleBets(ctx: any, tournamentId: number, winnerId: number) {
   const allTf = [...ctx.db.tournamentFighter.iter()]
     .filter((tf: any) => Number(tf.tournamentId) === Number(tournamentId));
-  const bets  = [...ctx.db.bet.iter()]
+  const bets = [...ctx.db.bet.iter()]
     .filter((b: any) => Number(b.tournamentId) === Number(tournamentId));
 
   for (const b of bets) {
-    const tf  = allTf.find((x: any) => Number(x.fighterId) === Number(b.fighterId));
-    let won   = false;
-    if (b.betType === 'WIN')           won = Number(b.fighterId) === Number(winnerId);
+    const tf = allTf.find((x: any) => Number(x.fighterId) === Number(b.fighterId));
+    let won = false;
+    if (b.betType === 'WIN') won = Number(b.fighterId) === Number(winnerId);
     if (b.betType === 'DIES_FIRST') {
       const firstDead = allTf
         .filter((x: any) => !x.isAlive)
@@ -366,24 +368,24 @@ function settleBets(ctx: any, tournamentId: number, winnerId: number) {
 function resolveEventBetSlip(ctx: any, slipId: number, resolution: string) {
   const slip = ctx.db.eventBetSlip.id.find(slipId);
   if (!slip || slip.status !== 'OPEN') return;
-  
+
   ctx.db.eventBetSlip.id.update({ ...slip, status: resolution });
-  
+
   const positions = [...ctx.db.eventBetPosition.iter()].filter((p: any) => Number(p.slipId) === Number(slipId));
-  
+
   let poolFor = 0;
   let poolAgainst = 0;
-  
+
   for (const p of positions) {
     if (p.side === 'FOR') poolFor += p.amount;
     else poolAgainst += p.amount;
   }
-  
+
   const totalPool = poolFor + poolAgainst;
-  
+
   const winningSide = resolution === 'RESOLVED_YES' ? 'FOR' : 'AGAINST';
   const winningPool = winningSide === 'FOR' ? poolFor : poolAgainst;
-  
+
   if (winningPool > 0) {
     for (const p of positions) {
       if (p.side === winningSide) {
@@ -399,10 +401,10 @@ function resolveEventBetSlip(ctx: any, slipId: number, resolution: string) {
 }
 
 function checkEventBets(ctx: any, tournamentId: number, hour: number, action: string, fighter1Id: number, fighter2Id?: number) {
-  const openSlips = [...ctx.db.eventBetSlip.iter()].filter((s: any) => 
+  const openSlips = [...ctx.db.eventBetSlip.iter()].filter((s: any) =>
     Number(s.tournamentId) === Number(tournamentId) && s.status === 'OPEN'
   );
-  
+
   for (const s of openSlips) {
     if (s.action === action && Number(s.fighter1Id) === Number(fighter1Id)) {
       if (Number(s.fighter2Id) === 0 || Number(s.fighter2Id) === Number(fighter2Id)) {
@@ -425,9 +427,9 @@ function pickWinner(survivors: any[]): any {
 
 function endTournament(ctx: any, tournament: any, survivors: any[], hour: number) {
   const winnerEntry = pickWinner(survivors);
-  const winnerId    = winnerEntry?.fighterId ?? 0;
-  const winner      = [...ctx.db.fighterTemplate.iter()].find((f: any) => Number(f.id) === Number(winnerId));
-  const reason      = survivors.length === 1
+  const winnerId = winnerEntry?.fighterId ?? 0;
+  const winner = [...ctx.db.fighterTemplate.iter()].find((f: any) => Number(f.id) === Number(winnerId));
+  const reason = survivors.length === 1
     ? `${winner?.name ?? 'The last fighter'} is the last one standing!`
     : winner
       ? `Time's up! ${winner.name} wins by survival of the fittest (${Number(winnerEntry.kills)} kills, least injured).`
@@ -448,7 +450,7 @@ function endTournament(ctx: any, tournament: any, survivors: any[], hour: number
   for (const tf of allTfForPts) {
     const f = [...ctx.db.fighterTemplate.iter()].find((x: any) => Number(x.id) === Number(tf.fighterId));
     if (!f) continue;
-    const pts    = calcTournamentPoints(tf, allTfForPts, Number(tf.fighterId) === Number(winnerId));
+    const pts = calcTournamentPoints(tf, allTfForPts, Number(tf.fighterId) === Number(winnerId));
     const earned = Number(f.totalPointsEarned ?? 0) + pts;
     const fAfter = spendPointsOnStats({ ...f, totalPointsEarned: earned }, pts + Number(f.points ?? 0));
     ctx.db.fighterTemplate.id.update(fAfter);
@@ -490,16 +492,16 @@ function processSponsorDrops(ctx: any, tournamentId: number, hour: number) {
 export const init = spacetimedb.init(ctx => {
   const archetypes = ['AGGRESSIVE', 'STRATEGIC', 'COWARDLY', 'DIPLOMATIC', 'BETRAYER', 'SURVIVALIST'];
   const names = [
-    'IRON_CIPHER','VEXOR_9','NULLBORN','ECHO_FANG','PRISM_WILD',
-    'SHADOW_BLOOM','OMEN_X','DUSK_REAPER','FORGE_7','STATIC_VALE',
-    'CRIMSON_LOG','VOID_STRIDER','NEON_WRAITH','ARCTIC_PULSE','EMBER_FALL',
-    'STEEL_MIRAGE','PHANTOM_CORE','DARK_FLUX','SILVER_COIL','BINARY_GHOST',
-    'RAZOR_TIDE','ONYX_HERALD','FROST_CIPHER','TOXIC_VEIL','BLAZE_UNIT',
-    'GRAVE_SIGNAL','APEX_NULL','STORM_INDEX','CHROME_SAINT','INFERNO_9',
-    'COLD_VERDICT','RUNE_SHADE','IRON_SPECTER','ZERO_BLOOM','PYRO_LANCER',
-    'SILENT_AXIOM','DREAD_COMET','HOLLOW_SPIKE','OBSIDIAN_7','SPARK_REAVER',
-    'PALE_DRIFTER','BONE_CIRCUIT','FLUX_REAPER','NOVA_SHADE','GRIM_ORACLE',
-    'ECHO_WARDEN','SULFUR_X','TITAN_VEIL','CRYSTAL_FANG','ABYSSAL_ONE',
+    'IRON_CIPHER', 'VEXOR_9', 'NULLBORN', 'ECHO_FANG', 'PRISM_WILD',
+    'SHADOW_BLOOM', 'OMEN_X', 'DUSK_REAPER', 'FORGE_7', 'STATIC_VALE',
+    'CRIMSON_LOG', 'VOID_STRIDER', 'NEON_WRAITH', 'ARCTIC_PULSE', 'EMBER_FALL',
+    'STEEL_MIRAGE', 'PHANTOM_CORE', 'DARK_FLUX', 'SILVER_COIL', 'BINARY_GHOST',
+    'RAZOR_TIDE', 'ONYX_HERALD', 'FROST_CIPHER', 'TOXIC_VEIL', 'BLAZE_UNIT',
+    'GRAVE_SIGNAL', 'APEX_NULL', 'STORM_INDEX', 'CHROME_SAINT', 'INFERNO_9',
+    'COLD_VERDICT', 'RUNE_SHADE', 'IRON_SPECTER', 'ZERO_BLOOM', 'PYRO_LANCER',
+    'SILENT_AXIOM', 'DREAD_COMET', 'HOLLOW_SPIKE', 'OBSIDIAN_7', 'SPARK_REAVER',
+    'PALE_DRIFTER', 'BONE_CIRCUIT', 'FLUX_REAPER', 'NOVA_SHADE', 'GRIM_ORACLE',
+    'ECHO_WARDEN', 'SULFUR_X', 'TITAN_VEIL', 'CRYSTAL_FANG', 'ABYSSAL_ONE',
   ];
   const lores = [
     'A tactical genius forged in digital warfare. Never loses an ally unnecessarily.',
@@ -515,7 +517,7 @@ export const init = spacetimedb.init(ctx => {
   ];
   for (let i = 0; i < 50; i++) {
     const archetype = archetypes[i % archetypes.length];
-    const name      = names[i];
+    const name = names[i];
     ctx.db.fighterTemplate.insert({
       id: 0, name, lore: lores[i % lores.length], archetype,
       // All stats start at 0 — fighters grow through point spending after tournaments
@@ -527,8 +529,8 @@ export const init = spacetimedb.init(ctx => {
   }
 });
 
-export const onConnect    = spacetimedb.clientConnected(_ctx => {});
-export const onDisconnect = spacetimedb.clientDisconnected(_ctx => {});
+export const onConnect = spacetimedb.clientConnected(_ctx => { });
+export const onDisconnect = spacetimedb.clientDisconnected(_ctx => { });
 
 // ─── REDUCERS ─────────────────────────────────────────────────────────────────
 
@@ -537,7 +539,7 @@ export const registerUser = spacetimedb.reducer(
   { username: t.string(), email: t.string(), passwordHash: t.string() },
   (ctx, { username, email, passwordHash }) => {
     // Only check username/email uniqueness — not identity
-    const takenUser  = [...ctx.db.user.iter()].find((u: any) => u.username === username);
+    const takenUser = [...ctx.db.user.iter()].find((u: any) => u.username === username);
     if (takenUser) throw new SenderError('Username already taken');
     const takenEmail = [...ctx.db.user.iter()].find((u: any) => u.email === email);
     if (takenEmail) throw new SenderError('Email already registered');
@@ -667,12 +669,12 @@ export const createTournament = spacetimedb.reducer(
 // Per-biome tile weightings — each arena type favors different terrain so
 // every tournament's map actually feels like its named environment.
 const BIOME_WEIGHTS: Record<string, Record<string, number>> = {
-  arctic:  { PLAIN: 5, WATER: 4, RUINS: 2, SHELTER: 2, DANGER: 2, FOREST: 1 },
-  jungle:  { FOREST: 6, PLAIN: 2, WATER: 2, RUINS: 2, SHELTER: 1, DANGER: 2 },
+  arctic: { PLAIN: 5, WATER: 4, RUINS: 2, SHELTER: 2, DANGER: 2, FOREST: 1 },
+  jungle: { FOREST: 6, PLAIN: 2, WATER: 2, RUINS: 2, SHELTER: 1, DANGER: 2 },
   volcano: { DANGER: 5, RUINS: 4, PLAIN: 2, SHELTER: 1, FOREST: 1, WATER: 1 },
-  urban:   { RUINS: 5, PLAIN: 4, SHELTER: 3, DANGER: 2, FOREST: 1, WATER: 1 },
-  ocean:   { WATER: 6, PLAIN: 2, SHELTER: 1, RUINS: 1, DANGER: 1, FOREST: 1 },
-  desert:  { PLAIN: 5, RUINS: 3, DANGER: 3, SHELTER: 1, WATER: 1, FOREST: 1 },
+  urban: { RUINS: 5, PLAIN: 4, SHELTER: 3, DANGER: 2, FOREST: 1, WATER: 1 },
+  ocean: { WATER: 6, PLAIN: 2, SHELTER: 1, RUINS: 1, DANGER: 1, FOREST: 1 },
+  desert: { PLAIN: 5, RUINS: 3, DANGER: 3, SHELTER: 1, WATER: 1, FOREST: 1 },
 };
 const DEFAULT_BIOME_WEIGHTS = { PLAIN: 4, FOREST: 2, WATER: 2, RUINS: 2, SHELTER: 1, DANGER: 2 };
 
@@ -695,7 +697,7 @@ export const startTournament = spacetimedb.reducer(
     const caller = ctx.db.user.identity.find(ctx.sender);
     const tournament0 = ctx.db.tournament.id.find(tournamentId);
     const isAdmin = caller?.isAdmin ?? false;
-    const isHost  = tournament0?.hostIdentity?.toHexString() === ctx.sender.toHexString();
+    const isHost = tournament0?.hostIdentity?.toHexString() === ctx.sender.toHexString();
     if (!isAdmin && !isHost) throw new SenderError('Admin or host required to start tournament');
     const tournament = ctx.db.tournament.id.find(tournamentId);
     if (!tournament || tournament.status !== 'UPCOMING') throw new SenderError('Tournament not found or not upcoming');
@@ -704,12 +706,12 @@ export const startTournament = spacetimedb.reducer(
     // all vary so no two tournaments play out on the same map.
     const W = ctx.random.integerInRange(10, 20);
     const H = ctx.random.integerInRange(10, 20);
-    const stakeRoll  = ctx.random();                       // 0..1 — drives "higher stakes" arenas
+    const stakeRoll = ctx.random();                       // 0..1 — drives "higher stakes" arenas
     const dangerBoost = 1 + stakeRoll * 1.8;               // bigger/riskier arenas skew deadlier
-    const prizePool   = Math.round((W * H) * (8 + stakeRoll * 22));
+    const prizePool = Math.round((W * H) * (8 + stakeRoll * 22));
 
     const baseWeights = BIOME_WEIGHTS[tournament.arenaType] ?? DEFAULT_BIOME_WEIGHTS;
-    const weights: Record<string, number> = { ...baseWeights, DANGER: (baseWeights.DANGER ?? 1) * dangerBoost };
+    const weights: Record<string, number> = { ...baseWeights, DANGER: (baseWeights.DANGER ?? 1) * dangerBoost * 2.0 };
 
     const cx0 = Math.floor(W * (0.35 + ctx.random() * 0.1));
     const cx1 = Math.ceil(W * (0.55 + ctx.random() * 0.1));
@@ -721,8 +723,7 @@ export const startTournament = spacetimedb.reducer(
     for (let x = 0; x < W; x++) {
       grid[x] = [];
       for (let y = 0; y < H; y++) {
-        const isCenter = x >= cx0 && x < cx1 && y >= cy0 && y < cy1;
-        grid[x][y] = isCenter ? 'CORNUCOPIA' : weightedPick(ctx, weights);
+        grid[x][y] = ctx.random() < 0.05 ? 'HIDDEN_POI' : weightedPick(ctx, weights);
       }
     }
     // Smoothing pass: tiles partially adopt a neighbor's type so terrain
@@ -731,9 +732,9 @@ export const startTournament = spacetimedb.reducer(
     for (let x = 0; x < W; x++) {
       final[x] = [];
       for (let y = 0; y < H; y++) {
-        if (grid[x][y] === 'CORNUCOPIA') { final[x][y] = 'CORNUCOPIA'; continue; }
+        if (grid[x][y] === 'HIDDEN_POI') { final[x][y] = 'HIDDEN_POI'; continue; }
         if (ctx.random() < 0.4) {
-          const neighbors = [[x-1,y],[x+1,y],[x,y-1],[x,y+1]].filter(([nx,ny]) => nx >= 0 && nx < W && ny >= 0 && ny < H && grid[nx][ny] !== 'CORNUCOPIA');
+          const neighbors = [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]].filter(([nx, ny]) => nx >= 0 && nx < W && ny >= 0 && ny < H && grid[nx][ny] !== 'HIDDEN_POI');
           if (neighbors.length) {
             const [nx, ny] = neighbors[ctx.random.integerInRange(0, neighbors.length - 1)];
             final[x][y] = grid[nx][ny];
@@ -744,20 +745,20 @@ export const startTournament = spacetimedb.reducer(
       }
     }
 
-    const resourceTypes = ['FOOD','WATER','MEDKIT','WEAPON','ARMOR','INTEL'];
+    const resourceTypes = ['FOOD', 'WATER', 'MEDKIT', 'WEAPON', 'ARMOR', 'INTEL'];
     const resourceChance = 0.16 + stakeRoll * 0.1;
     for (let x = 0; x < W; x++) {
       for (let y = 0; y < H; y++) {
         const tileType = final[x][y];
-        const hasResource = tileType !== 'CORNUCOPIA' && ctx.random() < resourceChance;
-        const resourceType = hasResource ? resourceTypes[ctx.random.integerInRange(0, resourceTypes.length - 1)] : undefined;
+        const hasResource = false;
+        const resourceType = undefined;
         ctx.db.arenaTile.insert({ id: 0, tournamentId: tournament.id, x, y, tileType, hasResource, resourceType });
       }
     }
     ctx.db.tournament.id.update({ ...tournament, gridWidth: W, gridHeight: H, prizePool, status: 'LIVE', currentHour: 1 });
     const allFighters = [...ctx.db.fighterTemplate.iter()];
     const fighterCount = ctx.random.integerInRange(8, Math.min(16, allFighters.length || 8));
-    const selected    = allFighters
+    const selected = allFighters
       .map((f: any, i: number) => ({ f, sort: ctx.random() }))
       .sort((a: any, b: any) => a.sort - b.sort)
       .slice(0, fighterCount).map((x: any) => x.f);
@@ -782,6 +783,7 @@ export const startTournament = spacetimedb.reducer(
         isAlive: true, x: pos.x, y: pos.y,
         hunger: 20, thirst: 20, fatigue: 10, injury: 0, morale: 80,
         condition: 'STABLE', inventory: '[]', alliances: '[]', kills: 0, eliminatedHour: undefined,
+        lastInteractionHour: 0, stationaryHours: 0,
       });
       ctx.db.fighterTemplate.id.update({ ...f, tournamentsPlayed: f.tournamentsPlayed + 1 });
     }
@@ -803,13 +805,13 @@ export const advanceHour = spacetimedb.reducer(
       .find((t: any) => Number(t.id) === Number(tournamentId));
     if (!tournament || tournament.status !== 'LIVE') return;
 
-    const hour  = Number(tournament.currentHour);
+    const hour = Number(tournament.currentHour);
     const allTf = [...ctx.db.tournamentFighter.iter()]
       .filter((tf: any) => Number(tf.tournamentId) === Number(tournamentId));
     const alive = allTf.filter((tf: any) => tf.isAlive);
-    if (alive.length <= 1 || hour >= MAX_TOURNAMENT_HOURS) { endTournament(ctx, tournament, alive, hour); return; }
+    if (alive.length <= 1) { endTournament(ctx, tournament, alive, hour); return; }
 
-    const openSlips = [...ctx.db.eventBetSlip.iter()].filter((s: any) => 
+    const openSlips = [...ctx.db.eventBetSlip.iter()].filter((s: any) =>
       Number(s.tournamentId) === Number(tournamentId) && s.status === 'OPEN'
     );
     for (const s of openSlips) {
@@ -819,11 +821,11 @@ export const advanceHour = spacetimedb.reducer(
     }
 
     let parsedDecisions: any[] = [];
-    try { parsedDecisions = JSON.parse(decisions); } catch {}
+    try { parsedDecisions = JSON.parse(decisions); } catch { }
 
     // Pre-load all fighters and tiles for this tournament once
     const allFighters = [...ctx.db.fighterTemplate.iter()];
-    const allTiles    = [...ctx.db.arenaTile.iter()]
+    const allTiles = [...ctx.db.arenaTile.iter()]
       .filter((t: any) => Number(t.tournamentId) === Number(tournamentId));
 
     // Phase milestone events
@@ -837,26 +839,48 @@ export const advanceHour = spacetimedb.reducer(
       });
     }
 
+    // POI Reveal Logic
+    if (hour > 1 && hour % 3 === 0) {
+      const hiddenPois = allTiles.filter((t: any) => t.tileType === 'HIDDEN_POI');
+      if (hiddenPois.length > 0) {
+        const revealCount = Math.min(hiddenPois.length, ctx.random.integerInRange(2, 3));
+        const toReveal = hiddenPois
+          .map((t: any) => ({ t, sort: ctx.random() }))
+          .sort((a: any, b: any) => a.sort - b.sort)
+          .slice(0, revealCount).map((x: any) => x.t);
+        
+        for (const poi of toReveal) {
+          ctx.db.arenaTile.id.update({ ...poi, tileType: 'CORNUCOPIA', hasResource: true, resourceType: 'FOOD' });
+          poi.tileType = 'CORNUCOPIA'; // Update local ref
+          ctx.db.liveEvent.insert({
+            id: 0, tournamentId, hour, eventType: 'BROADCAST',
+            description: `A hidden Point of Interest has been revealed at (${poi.x}, ${poi.y})!`,
+            involvedIds: '[]', x: Number(poi.x), y: Number(poi.y), timestamp: ctx.timestamp,
+          });
+        }
+      }
+    }
+
     // Night-time penalty: vision and morale drop
     const isNight = (hour % 24) >= 20 || (hour % 24) < 6;
 
     for (const tf of alive) {
-      const fighter  = allFighters.find((f: any) => Number(f.id) === Number(tf.fighterId));
+      const fighter = allFighters.find((f: any) => Number(f.id) === Number(tf.fighterId));
       if (!fighter) continue;
       const decision = parsedDecisions.find((d: any) => Number(d.fighterId) === Number(tf.fighterId));
-      const action   = decision?.action ?? 'HIDE';
+      const action = decision?.action ?? 'HIDE';
       const targetId = Number(decision?.targetId ?? 0);
-      const reason   = (decision?.reasoning ?? '').slice(0, 120); // cap length
-      let newTf      = { ...tf };
+      const reason = (decision?.reasoning ?? '').slice(0, 120); // cap length
+      let newTf = { ...tf };
 
       // ── Passive stat tick ───────────────────────────────────────────────────
-      newTf.hunger  = clamp(Number(newTf.hunger)  + 3, 0, 100);
-      newTf.thirst  = clamp(Number(newTf.thirst)  + 5, 0, 100);
+      newTf.hunger = clamp(Number(newTf.hunger) + 3, 0, 100);
+      newTf.thirst = clamp(Number(newTf.thirst) + 5, 0, 100);
       newTf.fatigue = clamp(Number(newTf.fatigue) + (isNight ? 3 : 4), 0, 100);
 
       // ── Tile environmental effects ──────────────────────────────────────────
       const currentTile = allTiles.find((t: any) => Number(t.x) === Number(tf.x) && Number(t.y) === Number(tf.y));
-      const tileType    = currentTile?.tileType ?? 'PLAIN';
+      const tileType = currentTile?.tileType ?? 'PLAIN';
       if (tileType === 'DANGER') {
         // Volcanic/hazardous tiles deal passive injury
         const hazardDmg = ctx.random.integerInRange(5, 18);
@@ -886,17 +910,25 @@ export const advanceHour = spacetimedb.reducer(
 
       switch (action) {
         case 'MOVE': {
-          // Enforce one tile per hour — step at most ±1 on one axis
+          // Enforce up to two tiles per hour
           const rawX = Number(decision?.targetX ?? tf.x);
           const rawY = Number(decision?.targetY ?? tf.y);
-          const dx   = rawX - Number(tf.x), dy = rawY - Number(tf.y);
-          const nx   = clamp(Number(tf.x) + Math.sign(dx), 0, Number(tournament.gridWidth)  - 1);
-          const ny   = clamp(Number(tf.y) + Math.sign(dy), 0, Number(tournament.gridHeight) - 1);
-          // If both axes differ, pick the dominant axis (larger delta) and hold the other
-          const finalX = Math.abs(dx) >= Math.abs(dy) ? nx : Number(tf.x);
-          const finalY = Math.abs(dy) >  Math.abs(dx) ? ny : Number(tf.y);
+          const dx = rawX - Number(tf.x), dy = rawY - Number(tf.y);
+          const moveDist = Math.max(Math.abs(dx), Math.abs(dy));
+          const allowedDist = Math.min(2, moveDist);
+          
+          let finalX = Number(tf.x);
+          let finalY = Number(tf.y);
+          if (allowedDist > 0) {
+             finalX = clamp(Number(tf.x) + Math.sign(dx) * Math.min(allowedDist, Math.abs(dx)), 0, Number(tournament.gridWidth) - 1);
+             finalY = clamp(Number(tf.y) + Math.sign(dy) * Math.min(allowedDist, Math.abs(dy)), 0, Number(tournament.gridHeight) - 1);
+          }
+          
           newTf.x = finalX; newTf.y = finalY;
-          newTf.fatigue = clamp(Number(newTf.fatigue) + 2, 0, 100);
+          newTf.fatigue = clamp(Number(newTf.fatigue) + (allowedDist === 2 ? 4 : 2), 0, 100);
+          if (allowedDist === 2) {
+             newTf.hunger = clamp(Number(newTf.hunger) + 6, 0, 100); // 3x hunger gain total
+          }
           const destTile = allTiles.find((t: any) => Number(t.x) === finalX && Number(t.y) === finalY);
           if (destTile?.hasResource && destTile.resourceType) {
             const inv: string[] = JSON.parse(newTf.inventory);
@@ -919,7 +951,7 @@ export const advanceHour = spacetimedb.reducer(
         }
         case 'REST': {
           const isShelter = tileType === 'SHELTER';
-          const restGain  = isShelter ? 25 : 12;
+          const restGain = isShelter ? 25 : 12;
           newTf.fatigue = clamp(Number(newTf.fatigue) - restGain, 0, 100);
           if (isShelter) newTf.injury = clamp(Number(newTf.injury) - 5, 0, 100); // shelter heals minor injury
           newTf.condition = 'RESTING';
@@ -933,11 +965,11 @@ export const advanceHour = spacetimedb.reducer(
         case 'CONSUME': {
           const inv: string[] = JSON.parse(newTf.inventory);
           const item = decision?.itemType ?? inv[0];
-          const idx  = inv.indexOf(item);
+          const idx = inv.indexOf(item);
           if (idx >= 0) {
             inv.splice(idx, 1); newTf.inventory = JSON.stringify(inv);
-            if (item === 'FOOD')   { newTf.hunger = clamp(Number(newTf.hunger) - 45, 0, 100); }
-            if (item === 'WATER')  { newTf.thirst = clamp(Number(newTf.thirst) - 55, 0, 100); }
+            if (item === 'FOOD') { newTf.hunger = clamp(Number(newTf.hunger) - 45, 0, 100); }
+            if (item === 'WATER') { newTf.thirst = clamp(Number(newTf.thirst) - 55, 0, 100); }
             if (item === 'MEDKIT') { newTf.injury = clamp(Number(newTf.injury) - 45, 0, 100); }
             ctx.db.liveEvent.insert({
               id: 0, tournamentId, hour, eventType: 'PHASE',
@@ -948,19 +980,19 @@ export const advanceHour = spacetimedb.reducer(
           break;
         }
         case 'ATTACK': {
-          const target     = alive.find((a: any) => Number(a.fighterId) === targetId);
+          const target = alive.find((a: any) => Number(a.fighterId) === targetId);
           const defFighter = target ? allFighters.find((f: any) => Number(f.id) === Number(target.fighterId)) : null;
           if (target && defFighter) {
-            const attInv       = JSON.parse(newTf.inventory);
-            const defInv       = JSON.parse(target.inventory);
+            const attInv = JSON.parse(newTf.inventory);
+            const defInv = JSON.parse(target.inventory);
             const attHasWeapon = attInv.includes('WEAPON');
-            const defHasArmor  = defInv.includes('ARMOR');
+            const defHasArmor = defInv.includes('ARMOR');
             // True RNG combat — floor of 5 so zero-stat rookies still fight
             const attPower = Math.max(5, Number(fighter.strength) * 2.5 + Number(fighter.luck) * 0.5) + (attHasWeapon ? 18 : 0) + Number(newTf.morale ?? 50) * 0.1;
             const defPower = Math.max(5, Number(defFighter.strength) + Number(defFighter.speed) * 1.2) + (defHasArmor ? 18 : 0) + Number(target.morale ?? 50) * 0.1 + Number(target.injury) * 0.05;
             const winChance = attPower / (attPower + defPower);
-            const roll      = ctx.random(); // truly random each call
-            const attWins   = roll < winChance;
+            const roll = ctx.random(); // truly random each call
+            const attWins = roll < winChance;
             if (attWins) {
               ctx.db.tournamentFighter.id.update({ ...target, isAlive: false, eliminatedHour: hour });
               newTf.kills = Number(newTf.kills) + 1;
@@ -976,8 +1008,8 @@ export const advanceHour = spacetimedb.reducer(
               });
             } else {
               const dmg = ctx.random.integerInRange(15, 35);
-              newTf.injury  = clamp(Number(newTf.injury) + dmg, 0, 100);
-              newTf.morale  = clamp(Number(newTf.morale ?? 50) - 10, 0, 100);
+              newTf.injury = clamp(Number(newTf.injury) + dmg, 0, 100);
+              newTf.morale = clamp(Number(newTf.morale ?? 50) - 10, 0, 100);
               ctx.db.liveEvent.insert({
                 id: 0, tournamentId, hour, eventType: 'COMBAT',
                 description: `${fighter.name} attacks ${defFighter.name} but is repelled, taking ${dmg} injury`,
@@ -989,7 +1021,7 @@ export const advanceHour = spacetimedb.reducer(
           break;
         }
         case 'ALLY': {
-          const target     = alive.find((a: any) => Number(a.fighterId) === targetId);
+          const target = alive.find((a: any) => Number(a.fighterId) === targetId);
           const defFighter = target ? allFighters.find((f: any) => Number(f.id) === Number(target.fighterId)) : null;
           if (target && defFighter) {
             const alliances: number[] = JSON.parse(newTf.alliances);
@@ -1012,7 +1044,7 @@ export const advanceHour = spacetimedb.reducer(
           break;
         }
         case 'BETRAY': {
-          const target     = alive.find((a: any) => Number(a.fighterId) === targetId);
+          const target = alive.find((a: any) => Number(a.fighterId) === targetId);
           const defFighter = target ? allFighters.find((f: any) => Number(f.id) === Number(target.fighterId)) : null;
           if (target && defFighter) {
             const alliances: number[] = JSON.parse(newTf.alliances);
@@ -1037,11 +1069,37 @@ export const advanceHour = spacetimedb.reducer(
           break;
         }
         case 'HIDE': {
-          newTf.condition = 'HIDDEN';
-          newTf.fatigue   = clamp(Number(newTf.fatigue) - 3, 0, 100); // hiding is restful
+          newTf.fatigue = clamp(Number(newTf.fatigue) - 3, 0, 100); // hiding is restful
           ctx.db.liveEvent.insert({
             id: 0, tournamentId, hour, eventType: 'PHASE',
-            description: `${fighter.name} goes dark${reason ? ` — "${reason}"` : ''}`,
+            description: `${fighter.name} prepares a hiding spot${reason ? ` — "${reason}"` : ''}`,
+            involvedIds: JSON.stringify([tf.fighterId]),
+            x: Number(tf.x), y: Number(tf.y), timestamp: ctx.timestamp,
+          });
+          break;
+        }
+        case 'NEGOTIATE': {
+          ctx.db.liveEvent.insert({
+            id: 0, tournamentId, hour, eventType: 'NEGOTIATION',
+            description: `${fighter.name} attempts to negotiate${reason ? ` — "${reason}"` : ''}`,
+            involvedIds: JSON.stringify([tf.fighterId, targetId]),
+            x: Number(tf.x), y: Number(tf.y), timestamp: ctx.timestamp,
+          });
+          break;
+        }
+        case 'TRADE': {
+          ctx.db.liveEvent.insert({
+            id: 0, tournamentId, hour, eventType: 'TRADE',
+            description: `${fighter.name} proposes a trade${reason ? ` — "${reason}"` : ''}`,
+            involvedIds: JSON.stringify([tf.fighterId, targetId]),
+            x: Number(tf.x), y: Number(tf.y), timestamp: ctx.timestamp,
+          });
+          break;
+        }
+        case 'WORLD_EVENT': {
+          ctx.db.liveEvent.insert({
+            id: 0, tournamentId, hour, eventType: 'ENCOUNTER',
+            description: `${fighter.name} encounters a world event: ${reason}`,
             involvedIds: JSON.stringify([tf.fighterId]),
             x: Number(tf.x), y: Number(tf.y), timestamp: ctx.timestamp,
           });
@@ -1049,7 +1107,23 @@ export const advanceHour = spacetimedb.reducer(
         }
       }
 
+      if (['ATTACK', 'NEGOTIATE', 'TRADE', 'ALLY', 'BETRAY', 'WORLD_EVENT'].includes(action)) {
+        newTf.lastInteractionHour = hour;
+      }
+
+      if (Number(newTf.x) === Number(tf.x) && Number(newTf.y) === Number(tf.y)) {
+        newTf.stationaryHours = Number(newTf.stationaryHours ?? 0) + 1;
+      } else {
+        newTf.stationaryHours = 0;
+      }
+
       if (newTf.condition !== 'RESTING' && newTf.condition !== 'HIDDEN') {
+        newTf.condition = getCondition(Number(newTf.hunger), Number(newTf.thirst), Number(newTf.fatigue), Number(newTf.injury));
+      }
+
+      if (Number(newTf.stationaryHours) >= 3) {
+        newTf.condition = 'HIDDEN';
+      } else if (newTf.condition === 'HIDDEN') {
         newTf.condition = getCondition(Number(newTf.hunger), Number(newTf.thirst), Number(newTf.fatigue), Number(newTf.injury));
       }
 
@@ -1071,7 +1145,7 @@ export const advanceHour = spacetimedb.reducer(
     processSponsorDrops(ctx, tournamentId, hour);
     const stillAlive = [...ctx.db.tournamentFighter.iter()]
       .filter((tf: any) => Number(tf.tournamentId) === Number(tournamentId) && tf.isAlive);
-    if (stillAlive.length <= 1 || hour + 1 >= MAX_TOURNAMENT_HOURS) endTournament(ctx, tournament, stillAlive, hour + 1);
+    if (stillAlive.length <= 1) endTournament(ctx, tournament, stillAlive, hour + 1);
     else ctx.db.tournament.id.update({ ...tournament, currentHour: hour + 1 });
   }
 );
@@ -1198,7 +1272,7 @@ export const hostTournament = spacetimedb.reducer(
     const user = ctx.db.user.identity.find(ctx.sender);
     if (!user) throw new SenderError('Not registered');
     if (user.fightersOwned < 10) throw new SenderError('Need 10 fighters to host');
-    if (user.balance < 1000)     throw new SenderError('Need $1000 to host');
+    if (user.balance < 1000) throw new SenderError('Need $1000 to host');
     ctx.db.user.identity.update({ ...user, balance: user.balance - 1000, tournamentsHosted: user.tournamentsHosted + 1 });
     const tournamentId = ctx.db.tournament.insert({
       id: 0, ...args, minEventBetAmount: args.minEventBetAmount ?? 5.0, status: 'UPCOMING', currentHour: 0,
@@ -1233,14 +1307,14 @@ export const createEventBetSlip = spacetimedb.reducer(
     }
     if (amount < Number(tournament.minEventBetAmount)) throw new SenderError('Amount below minimum bet');
     if (user.balance < amount) throw new SenderError('Insufficient funds');
-    
+
     ctx.db.user.identity.update({ ...user, balance: user.balance - amount });
-    
+
     const slipId = ctx.db.eventBetSlip.insert({
       id: 0, tournamentId, creatorId: ctx.sender, fighter1Id, action, fighter2Id,
       roundsDuration, startHour: tournament.currentHour, status: 'OPEN', createdAt: ctx.timestamp,
     }).id;
-    
+
     ctx.db.eventBetPosition.insert({
       id: 0, slipId, userId: ctx.sender, side, amount, placedAt: ctx.timestamp,
     });
@@ -1253,15 +1327,15 @@ export const joinEventBetSlip = spacetimedb.reducer(
   (ctx, { slipId, side, amount }) => {
     const user = ctx.db.user.identity.find(ctx.sender);
     if (!user) throw new SenderError('Not registered');
-    
+
     const slip = ctx.db.eventBetSlip.id.find(slipId);
     if (!slip || slip.status !== 'OPEN') throw new SenderError('Slip is not open');
-    
+
     if (amount <= 0) throw new SenderError('Invalid amount');
     if (user.balance < amount) throw new SenderError('Insufficient funds');
-    
+
     ctx.db.user.identity.update({ ...user, balance: user.balance - amount });
-    
+
     ctx.db.eventBetPosition.insert({
       id: 0, slipId, userId: ctx.sender, side, amount, placedAt: ctx.timestamp,
     });
