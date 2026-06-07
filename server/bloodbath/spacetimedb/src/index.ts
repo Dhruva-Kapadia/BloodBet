@@ -1254,8 +1254,8 @@ export const setFighterAvatar = spacetimedb.reducer(
     const f = ctx.db.fighterTemplate.id.find(fighterId);
     if (!f) return;
     const existing = String(f.avatarUrl ?? '');
-    // Only set if empty or still a DiceBear placeholder
-    if (existing && !existing.includes('dicebear')) return;
+    // Only set if empty, DiceBear placeholder, or old Pollinations URL (not yet a data URL)
+    if (existing && !existing.includes('dicebear') && !existing.startsWith('https://image.pollinations')) return;
     ctx.db.fighterTemplate.id.update({ ...f, avatarUrl });
   }
 );

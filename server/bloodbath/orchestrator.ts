@@ -388,39 +388,39 @@ async function generateAvatars(conn: DbConnection) {
   const fighters = [...conn.db.fighterTemplate.iter()];
   const needsAvatar = fighters.filter(f => {
     const url = String(f.avatarUrl ?? '');
-    return !url || url.includes('dicebear') || url === '';
+    return !url || url.includes('dicebear') || url === '' || url.startsWith('https://image.pollinations');
   });
 
   if (needsAvatar.length === 0) {
-    console.log('🖼️  All fighters already have AI portraits');
+    console.log('🖼️  All fighters already have embedded portraits');
     return;
   }
 
-  console.log(`🎨 Generating AI portraits for ${needsAvatar.length} fighters (this takes ~30s each)…`);
+  console.log(`🎨 Generating AI portraits for ${needsAvatar.length} fighters (~30s each)…`);
 
   const tasks = needsAvatar.map(f => async () => {
     const url = pollinationsUrl(String(f.name), String(f.archetype));
-    // Fetch the image to trigger generation and wait for it to be ready
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const res = await fetch(url, { signal: AbortSignal.timeout(90_000) });
-        if (res.ok) {
-          conn.reducers.setFighterAvatar({ fighterId: Number(f.id), avatarUrl: url });
-          console.log(`  🖼️  ${f.name} → portrait ready`);
-          return;
-        }
-        console.warn(`  ⚠️  ${f.name} got HTTP ${res.status}, retrying…`);
+        if (!res.ok) { console.warn(`  ⚠️  ${f.name} HTTP ${res.status}`); await sleep(3000); continue; }
+        const contentType = res.headers.get('content-type') ?? 'image/jpeg';
+        const buffer = await res.arrayBuffer();
+        const b64 = Buffer.from(buffer).toString('base64');
+        const dataUrl = `data:${contentType};base64,${b64}`;
+        conn.reducers.setFighterAvatar({ fighterId: Number(f.id), avatarUrl: dataUrl });
+        console.log(`  🖼️  ${f.name} → embedded (${Math.round(b64.length / 1024)}KB)`);
+        return;
       } catch (e: any) {
-        console.warn(`  ⚠️  ${f.name} fetch failed (attempt ${attempt + 1}): ${e?.message ?? e}`);
+        console.warn(`  ⚠️  ${f.name} attempt ${attempt + 1} failed: ${e?.message ?? e}`);
+        await sleep(4000);
       }
-      await sleep(3000);
     }
-    console.error(`  ❌ Could not generate portrait for ${f.name} after 3 attempts`);
+    console.error(`  ❌ Portrait failed for ${f.name} after 3 attempts — using placeholder`);
   });
 
-  // Sequential to avoid hammering Pollinations
   await pooled(tasks, 1);
-  console.log('✅ All portraits generated and cached');
+  console.log('✅ Portraits embedded — images are now self-contained');
 }
 
 // ─── Orchestration Loop ───────────────────────────────────────────────────────
