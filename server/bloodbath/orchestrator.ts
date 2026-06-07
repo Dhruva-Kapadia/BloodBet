@@ -3,11 +3,29 @@ import { DbConnection } from '../../src/spacetime';
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
+// Sliding-window rate limiter — Groq free tier: 30 RPM
+class RateLimiter {
+  private calls: number[] = [];
+  constructor(private readonly rpm: number) {}
+  async acquire() {
+    const now = Date.now();
+    this.calls = this.calls.filter(t => now - t < 60_000);
+    if (this.calls.length >= this.rpm) {
+      const wait = 60_000 - (now - this.calls[0]) + 200;
+      console.log(`  ⏳ Groq rate limit — waiting ${(wait / 1000).toFixed(1)}s…`);
+      await sleep(wait);
+      this.calls = this.calls.filter(t => Date.now() - t < 60_000);
+    }
+    this.calls.push(Date.now());
+  }
+}
+const groqLimiter = new RateLimiter(28); // 28 RPM — 2 below limit as buffer
+
 const SPACETIME_URI     = process.env.SPACETIMEDB_HOST || 'wss://maincloud.spacetimedb.com';
 const DB_NAME           = process.env.SPACETIMEDB_DB_NAME || 'bloodbet-dre-dev';
-const HOUR_INTERVAL_MS  = 10_000;   // 10 s per in-game hour
-const BETTING_WINDOW_MS = 5 * 60 * 1000; // 5 min betting window
-const AI_CONCURRENCY    = 4;        // parallel Groq calls
+const HOUR_INTERVAL_MS  = 15_000;
+const BETTING_WINDOW_MS = 5 * 60 * 1000;
+const AI_CONCURRENCY    = 4;
 
 const ARENA_TYPES = [
   'ARCTIC WASTELAND', 'JUNGLE LABYRINTH',
@@ -93,64 +111,35 @@ function buildPrompt(
   fighter: any, tf: any,
   visibleFighters: any[],
   nearbyResources: string[],
-  nearbyTileTypes: string[],
   currentTileType: string,
   aliveCount: number,
   totalCount: number,
   hour: number,
 ): string {
-  const archetypeGuide: Record<string, string> = {
-    AGGRESSIVE:  'You live for combat. Rush enemies, claim kills, dominate through fear. Weakness is death.',
-    STRATEGIC:   'You are patient. Gather intelligence, pick fights you can win, never waste resources.',
-    COWARDLY:    'Survival above all. Hide, flee, let others die. Fight only when cornered.',
-    DIPLOMATIC:  'Build alliances, share resources, create a network. Betray only as a last resort.',
-    BETRAYER:    'Gain trust then destroy it at the perfect moment for maximum devastation.',
-    SURVIVALIST: 'Resources keep you alive, not kills. Maintain supplies, avoid conflicts, outlast everyone.',
-  };
-
   const allies: number[]    = JSON.parse(tf.alliances ?? '[]');
   const inventory: string[] = JSON.parse(tf.inventory  ?? '[]');
-  const urgentNeed          = getUrgentNeed(tf);
-  const phase               = getPhase(aliveCount, totalCount);
-  const isNight             = hour % 24 >= 20 || hour % 24 < 6;
+  const phase = getPhase(aliveCount, totalCount);
+  const isNight = hour % 24 >= 20 || hour % 24 < 6;
 
   const enemies = visibleFighters
     .filter(f => !allies.includes(n(f.fighterId)))
-    .map(f => `${f.name}(id:${n(f.fighterId)} cond:${f.condition} inj:${n(f.injury)}% kills:${n(f.kills)})`);
-
-  const alliesVisible = visibleFighters
+    .map(f => `${f.name}#${n(f.fighterId)}(inj:${n(f.injury)}%,k:${n(f.kills)})`);
+  const alliesVis = visibleFighters
     .filter(f => allies.includes(n(f.fighterId)))
-    .map(f => `${f.name}(id:${n(f.fighterId)} cond:${f.condition})`);
+    .map(f => `${f.name}#${n(f.fighterId)}`);
 
-  return `You are ${fighter.name}, a ${fighter.archetype} gladiator. ${n(fighter.wins) > 0 ? `${n(fighter.wins)} previous wins.` : 'First tournament.'}
-STATS: STR:${n(fighter.strength)} SPD:${n(fighter.speed)} INT:${n(fighter.intelligence)} LCK:${n(fighter.luck)} CHA:${n(fighter.charisma)}
+  const archetypeShort: Record<string, string> = {
+    AGGRESSIVE:'fight hard', STRATEGIC:'think first', COWARDLY:'avoid danger',
+    DIPLOMATIC:'build alliances', BETRAYER:'gain then betray trust', SURVIVALIST:'hoard resources',
+  };
 
-SITUATION — Hour ${hour} (${isNight ? '🌙 Night' : '☀️ Day'}) | ${phase.label} | ${aliveCount}/${totalCount} alive
-  Standing on: ${currentTileType} terrain at (${n(tf.x)},${n(tf.y)})
-  Hunger:${n(tf.hunger)}% Thirst:${n(tf.thirst)}% Fatigue:${n(tf.fatigue)}% Injury:${n(tf.injury)}%
-  Inventory: [${inventory.join(', ') || 'empty'}]
-  Kills: ${n(tf.kills)} | Active allies: ${allies.length}
+  return `${fighter.name} [${fighter.archetype}] Hr${hour} ${isNight?'🌙':'☀️'} ${phase.label} ${aliveCount}/${totalCount}alive
+Pos:(${n(tf.x)},${n(tf.y)}) Tile:${currentTileType} H:${n(tf.hunger)}% T:${n(tf.thirst)}% F:${n(tf.fatigue)}% Inj:${n(tf.injury)}%
+Inv:[${inventory.join(',') || 'none'}] Kills:${n(tf.kills)} Allies:${allies.length}
+Enemies:${enemies.join(' ')||'none'} | Allies:${alliesVis.join(' ')||'none'} | Loot:${nearbyResources.join(' ')||'none'}
+Directive:${archetypeShort[fighter.archetype]||'survive'}
+JSON only:{"action":"MOVE|REST|CONSUME|ATTACK|ALLY|BETRAY|HIDE","targetId":null,"targetX":null,"targetY":null,"itemType":null,"reasoning":"1 sentence"}`;}
 
-NEARBY (within 2 tiles):
-  Enemies: ${enemies.join(' | ') || 'none'}
-  Allies:  ${alliesVisible.join(' | ') || 'none'}
-  Resources: ${nearbyResources.join(', ') || 'none'}
-  Terrain:   ${nearbyTileTypes.join(', ')}
-
-DIRECTIVE: ${archetypeGuide[fighter.archetype] ?? 'Survive.'}
-PHASE ORDER: ${phase.instruction}
-${urgentNeed ? `⚠️ URGENT NEED: ${urgentNeed} — address this immediately!` : ''}
-
-Respond with ONLY valid JSON, no markdown:
-{"action":"MOVE"|"REST"|"CONSUME"|"ATTACK"|"ALLY"|"BETRAY"|"HIDE","targetId":null,"targetX":null,"targetY":null,"itemType":null,"reasoning":"I ... [first-person, 1 dramatic sentence]"}
-
-Constraints:
-- MOVE: targetX/Y must be ADJACENT to your current position (±1 in one direction only, not diagonal)
-- ATTACK / ALLY / BETRAY: targetId must be a visible enemy/ally id listed above
-- CONSUME: itemType must be in your Inventory
-- If URGENT is REST and fatigue > 75: use REST
-- If URGENT is WATER/FOOD/MEDKIT and you have it: use CONSUME`;
-}
 
 // ─── Get AI Decision ──────────────────────────────────────────────────────────
 
@@ -167,38 +156,36 @@ async function getDecision(
   gridW: number,
   gridH: number,
 ): Promise<any> {
-  for (let attempt = 0; attempt < 3; attempt++) {
+  const base = { fighterId: n(tf.fighterId), targetId: null, targetX: null, targetY: null, itemType: null };
+  const inv: string[] = JSON.parse(tf.inventory ?? '[]');
+  const urgent = getUrgentNeed(tf);
+
+  // Skip Groq for obvious decisions — saves ~500 tokens per skipped call
+  if (urgent === 'REST') return { ...base, action: 'REST', reasoning: 'I must rest.' };
+  if (urgent && inv.includes(urgent)) return { ...base, action: 'CONSUME', itemType: urgent, reasoning: `Using ${urgent} now.` };
+
+  for (let attempt = 0; attempt < 2; attempt++) {
     try {
+      await groqLimiter.acquire();
       const res = await groq.chat.completions.create({
         model:       'llama-3.3-70b-versatile',
         temperature: 0.75,
-        max_tokens:  160,
+        max_tokens:  80,
         messages: [
-          { role: 'system', content: 'You are a gladiator AI in a battle royale. Respond with ONLY valid JSON. No markdown, no explanation outside the JSON.' },
-          { role: 'user',   content: buildPrompt(fighter, tf, visibleFighters, nearbyResources, nearbyTileTypes, currentTileType, aliveCount, totalCount, hour) },
+          { role: 'system', content: 'Battle royale AI. Reply ONLY with valid JSON, no markdown.' },
+          { role: 'user',   content: buildPrompt(fighter, tf, visibleFighters, nearbyResources, currentTileType, aliveCount, totalCount, hour) },
         ],
       });
-
-      const raw  = res.choices[0]?.message?.content ?? '{}';
-      const json = raw.replace(/```json|```/g, '').trim();
-      // Extract first JSON object if model adds extra text
-      const match = json.match(/\{[\s\S]*\}/);
-      if (!match) throw new Error('No JSON in response');
+      const raw   = res.choices[0]?.message?.content ?? '{}';
+      const match = raw.replace(/```json|```/g, '').match(/\{[\s\S]*\}/);
+      if (!match) throw new Error('No JSON');
       return { fighterId: n(tf.fighterId), ...JSON.parse(match[0]) };
     } catch (err: any) {
-      if (err?.status === 429) {
-        const wait = (parseInt(err?.headers?.['retry-after'] ?? '6') + 1) * 1000;
-        console.log(`  ⏳ Rate limit for ${fighter.name}, waiting ${wait / 1000}s…`);
-        await sleep(wait);
-      } else if (attempt < 2) {
-        await sleep(800 * (attempt + 1));
-      } else {
-        console.error(`  ❌ AI failed for ${fighter.name}:`, err?.message ?? err);
-      }
+      if (attempt === 0) await sleep(1000);
+      else console.error(`  ❌ AI failed for ${fighter.name}:`, err?.message ?? err);
     }
   }
 
-  // Smart fallback — heuristic instead of random
   return smartFallback(tf, visibleFighters, allTiles, gridW, gridH);
 }
 
@@ -237,7 +224,7 @@ function validateDecision(
   d = { ...d };
 
   // Social actions need a valid visible target
-  if (['ATTACK', 'ALLY', 'BETRAY'].includes(d.action)) {
+  if (['ATTACK', 'ALLY', 'BETRAY', 'NEGOTIATE', 'TRADE'].includes(d.action)) {
     const valid = visibleFighters.some(f => n(f.fighterId) === n(d.targetId));
     if (!valid) {
       // Try to auto-select first visible enemy for ATTACK
@@ -245,11 +232,16 @@ function validateDecision(
         const allies: number[] = JSON.parse(tf.alliances ?? '[]');
         const enemy = visibleFighters.find(f => !allies.includes(n(f.fighterId)));
         if (enemy) { d.targetId = n(enemy.fighterId); }
-        else { d.action = 'HIDE'; d.targetId = null; }
+        else { d.action = 'WORLD_EVENT'; d.targetId = null; d.reasoning = 'A wild predator attacks from the shadows.'; }
       } else {
         d.action = 'REST'; d.targetId = null;
       }
     }
+  }
+
+  // WORLD_EVENT doesn't need a targetId.
+  if (d.action === 'WORLD_EVENT') {
+     d.targetId = null;
   }
 
   // CONSUME: item must be in inventory
@@ -261,7 +253,7 @@ function validateDecision(
     }
   }
 
-  // MOVE: must be adjacent (±1 in one axis only) and in bounds
+  // MOVE: must be within 2 tiles and in bounds
   if (d.action === 'MOVE') {
     if (d.targetX == null || d.targetY == null) {
       d.action = 'REST';
@@ -269,9 +261,10 @@ function validateDecision(
       const tx = clamp(n(d.targetX), 0, gridW - 1);
       const ty = clamp(n(d.targetY), 0, gridH - 1);
       const dx = tx - n(tf.x), dy = ty - n(tf.y);
-      // Enforce adjacency — AI sometimes teleports
-      const adjX = clamp(n(tf.x) + Math.sign(dx), 0, gridW - 1);
-      const adjY = clamp(n(tf.y) + Math.sign(dy), 0, gridH - 1);
+      // Enforce up to 2 tiles distance
+      const dist = Math.min(2, Math.max(Math.abs(dx), Math.abs(dy)));
+      const adjX = clamp(n(tf.x) + Math.sign(dx) * Math.min(dist, Math.abs(dx)), 0, gridW - 1);
+      const adjY = clamp(n(tf.y) + Math.sign(dy) * Math.min(dist, Math.abs(dy)), 0, gridH - 1);
       d.targetX = adjX; d.targetY = adjY;
     }
   }
@@ -336,7 +329,7 @@ async function runHour(conn: DbConnection, tournamentId: number) {
     const currentTileType = currentTile?.tileType ?? 'PLAIN';
 
     let decision = await getDecision(
-      fighter, tf, visibleFighters, nearbyResources, nearbyTileTypes,
+      fighter, tf, visibleFighters, nearbyResources, nearbyTileTypes, // nearbyTileTypes kept for compat
       currentTileType, allTiles, alive.length, total, hour, gridW, gridH,
     );
     const inventory: string[] = JSON.parse(tf.inventory ?? '[]');

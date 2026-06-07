@@ -143,6 +143,7 @@ const EVENT_BURST_ICONS: Record<string, string> = {
   ELIMINATION: '💀',
   SPONSOR:     '🎁',
   COMBAT:      '💥',
+  BROADCAST:   '📢',
 };
 
 function isoPos(x: number, y: number) {
@@ -165,7 +166,7 @@ export function ArenaMap({ width, height, tiles, roster, events = [], currentHou
   // Most recent located event drives the burst animation; latest 5 drive the ticker
   const locatedEvents = events.filter(e => e.x !== null && e.x !== undefined && e.y !== null && e.y !== undefined);
   const latestBurst   = locatedEvents[0];
-  const tickerEvents  = events.slice(0, 5);
+  const tickerEvents  = events.filter(e => e.eventType === 'BROADCAST').slice(0, 5);
 
   return (
     <div className="bg-bg-secondary border border-accent-crimson-end p-6 relative overflow-hidden">

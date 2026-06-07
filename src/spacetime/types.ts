@@ -178,6 +178,8 @@ export const TournamentFighter = __t.object("TournamentFighter", {
   alliances: __t.string(),
   kills: __t.u8(),
   eliminatedHour: __t.option(__t.u32()),
+  lastInteractionHour: __t.u32(),
+  stationaryHours: __t.u8(),
 });
 export type TournamentFighter = __Infer<typeof TournamentFighter>;
 
