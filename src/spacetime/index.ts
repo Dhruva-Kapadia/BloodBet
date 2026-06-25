@@ -36,6 +36,7 @@ import {
 // Import all reducer arg schemas
 import AdminCreateTournamentReducer from "./admin_create_tournament_reducer";
 import AdvanceHourReducer from "./advance_hour_reducer";
+import CancelBidReducer from "./cancel_bid_reducer";
 import ClaimAdminReducer from "./claim_admin_reducer";
 import CreateEventBetSlipReducer from "./create_event_bet_slip_reducer";
 import CreateFighterReducer from "./create_fighter_reducer";
@@ -44,11 +45,9 @@ import HostTournamentReducer from "./host_tournament_reducer";
 import JoinEventBetSlipReducer from "./join_event_bet_slip_reducer";
 import MarkAllNotificationsReadReducer from "./mark_all_notifications_read_reducer";
 import MarkNotificationReadReducer from "./mark_notification_read_reducer";
+import OpenAuctionReducer from "./open_auction_reducer";
 import PlaceBetReducer from "./place_bet_reducer";
 import PlaceBidReducer from "./place_bid_reducer";
-import CancelBidReducer from "./cancel_bid_reducer";
-import OpenAuctionReducer from "./open_auction_reducer";
-import SettleAuctionReducer from "./settle_auction_reducer";
 import RegisterForTournamentReducer from "./register_for_tournament_reducer";
 import RegisterUserReducer from "./register_user_reducer";
 import RemoveFriendReducer from "./remove_friend_reducer";
@@ -57,6 +56,7 @@ import ResetFighterStatsReducer from "./reset_fighter_stats_reducer";
 import RespondToFriendRequestReducer from "./respond_to_friend_request_reducer";
 import SendFriendRequestReducer from "./send_friend_request_reducer";
 import SetAdminReducer from "./set_admin_reducer";
+import SettleAuctionReducer from "./settle_auction_reducer";
 import SponsorFighterReducer from "./sponsor_fighter_reducer";
 import StartTournamentReducer from "./start_tournament_reducer";
 import UnregisterFromTournamentReducer from "./unregister_from_tournament_reducer";
@@ -68,8 +68,8 @@ import VerifyLoginReducer from "./verify_login_reducer";
 
 // Import all table schema definitions
 import ArenaTileRow from "./arena_tile_table";
-import AuctionBidRow from "./auction_bid_table";
 import AuctionRow from "./auction_table";
+import AuctionBidRow from "./auction_bid_table";
 import BetRow from "./bet_table";
 import ContractRow from "./contract_table";
 import EventBetPositionRow from "./event_bet_position_table";
@@ -102,6 +102,17 @@ const tablesSchema = __schema({
       { name: 'arenaTile_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, ArenaTileRow),
+  auction: __table({
+    name: 'auction',
+    indexes: [
+      { accessor: 'id', name: 'auction_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'auction_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, AuctionRow),
   auctionBid: __table({
     name: 'auctionBid',
     indexes: [
@@ -116,17 +127,6 @@ const tablesSchema = __schema({
       { name: 'auctionBid_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, AuctionBidRow),
-  auction: __table({
-    name: 'auction',
-    indexes: [
-      { accessor: 'id', name: 'auction_id_idx_btree', algorithm: 'btree', columns: [
-        'id',
-      ] },
-    ],
-    constraints: [
-      { name: 'auction_id_key', constraint: 'unique', columns: ['id'] },
-    ],
-  }, AuctionRow),
   bet: __table({
     name: 'bet',
     indexes: [
@@ -330,6 +330,7 @@ const tablesSchema = __schema({
 const reducersSchema = __reducers(
   __reducerSchema("adminCreateTournament", AdminCreateTournamentReducer),
   __reducerSchema("advanceHour", AdvanceHourReducer),
+  __reducerSchema("cancelBid", CancelBidReducer),
   __reducerSchema("claimAdmin", ClaimAdminReducer),
   __reducerSchema("createEventBetSlip", CreateEventBetSlipReducer),
   __reducerSchema("createFighter", CreateFighterReducer),
@@ -338,11 +339,9 @@ const reducersSchema = __reducers(
   __reducerSchema("joinEventBetSlip", JoinEventBetSlipReducer),
   __reducerSchema("markAllNotificationsRead", MarkAllNotificationsReadReducer),
   __reducerSchema("markNotificationRead", MarkNotificationReadReducer),
+  __reducerSchema("openAuction", OpenAuctionReducer),
   __reducerSchema("placeBet", PlaceBetReducer),
   __reducerSchema("placeBid", PlaceBidReducer),
-  __reducerSchema("cancelBid", CancelBidReducer),
-  __reducerSchema("openAuction", OpenAuctionReducer),
-  __reducerSchema("settleAuction", SettleAuctionReducer),
   __reducerSchema("registerForTournament", RegisterForTournamentReducer),
   __reducerSchema("registerUser", RegisterUserReducer),
   __reducerSchema("removeFriend", RemoveFriendReducer),
@@ -351,6 +350,7 @@ const reducersSchema = __reducers(
   __reducerSchema("respondToFriendRequest", RespondToFriendRequestReducer),
   __reducerSchema("sendFriendRequest", SendFriendRequestReducer),
   __reducerSchema("setAdmin", SetAdminReducer),
+  __reducerSchema("settleAuction", SettleAuctionReducer),
   __reducerSchema("sponsorFighter", SponsorFighterReducer),
   __reducerSchema("startTournament", StartTournamentReducer),
   __reducerSchema("unregisterFromTournament", UnregisterFromTournamentReducer),

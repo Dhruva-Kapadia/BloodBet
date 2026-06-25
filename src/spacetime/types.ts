@@ -21,6 +21,16 @@ export const ArenaTile = __t.object("ArenaTile", {
 });
 export type ArenaTile = __Infer<typeof ArenaTile>;
 
+export const Auction = __t.object("Auction", {
+  id: __t.u32(),
+  fighterId: __t.u32(),
+  openedBy: __t.identity(),
+  startedAt: __t.timestamp(),
+  endsAtMicros: __t.u64(),
+  settled: __t.bool(),
+});
+export type Auction = __Infer<typeof Auction>;
+
 export const AuctionBid = __t.object("AuctionBid", {
   id: __t.u32(),
   fighterId: __t.u32(),

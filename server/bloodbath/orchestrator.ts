@@ -1,278 +1,17 @@
-import Groq from 'groq-sdk';
 import { DbConnection } from '../../src/spacetime';
-
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-
-// Sliding-window rate limiter — Groq free tier: 30 RPM
-class RateLimiter {
-  private calls: number[] = [];
-  constructor(private readonly rpm: number) {}
-  async acquire() {
-    const now = Date.now();
-    this.calls = this.calls.filter(t => now - t < 60_000);
-    if (this.calls.length >= this.rpm) {
-      const wait = 60_000 - (now - this.calls[0]) + 200;
-      console.log(`  ⏳ Groq rate limit — waiting ${(wait / 1000).toFixed(1)}s…`);
-      await sleep(wait);
-      this.calls = this.calls.filter(t => Date.now() - t < 60_000);
-    }
-    this.calls.push(Date.now());
-  }
-}
-const groqLimiter = new RateLimiter(28); // 28 RPM — 2 below limit as buffer
+import { workflow } from './graph/workflow';
+import { n } from './graph/utils';
 
 const SPACETIME_URI     = process.env.SPACETIMEDB_HOST || 'wss://maincloud.spacetimedb.com';
 const DB_NAME           = process.env.SPACETIMEDB_DB_NAME || 'bloodbet-dre-dev';
 const HOUR_INTERVAL_MS  = 15_000;
 const BETTING_WINDOW_MS = 5 * 60 * 1000;
-const AI_CONCURRENCY    = 4;
 
 const ARENA_TYPES = [
   'ARCTIC WASTELAND', 'JUNGLE LABYRINTH',
   'VOLCANIC PEAKS',   'URBAN RUINS',
   'DESERT COLOSSEUM',
 ];
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const n = (v: any) => Number(v ?? 0);
-
-function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
-
-/** Run `tasks` with at most `limit` in-flight at once, preserving order. */
-async function pooled<T>(tasks: (() => Promise<T>)[], limit: number): Promise<T[]> {
-  const results: (T | null)[] = new Array(tasks.length).fill(null);
-  let i = 0;
-  async function worker() {
-    while (i < tasks.length) {
-      const idx = i++;
-      results[idx] = await tasks[idx]();
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker));
-  return results as T[];
-}
-
-function getUrgentNeed(tf: any): string | null {
-  if (n(tf.thirst)  >= 65) return 'WATER';
-  if (n(tf.hunger)  >= 65) return 'FOOD';
-  if (n(tf.injury)  >= 55) return 'MEDKIT';
-  if (n(tf.fatigue) >= 75) return 'REST';
-  return null;
-}
-
-function getTileAt(allTiles: any[], x: number, y: number) {
-  return allTiles.find(t => n(t.x) === x && n(t.y) === y);
-}
-
-/** Find the nearest tile with a given resource, returns null if none in range */
-function nearestResource(allTiles: any[], fromX: number, fromY: number, resource: string, maxDist = 5): { x: number; y: number } | null {
-  let best: { x: number; y: number } | null = null;
-  let bestDist = Infinity;
-  for (const tile of allTiles) {
-    if (!tile.hasResource || tile.resourceType !== resource) continue;
-    const d = Math.abs(n(tile.x) - fromX) + Math.abs(n(tile.y) - fromY);
-    if (d < bestDist && d <= maxDist) { bestDist = d; best = { x: n(tile.x), y: n(tile.y) }; }
-  }
-  return best;
-}
-
-/** One step toward target — returns adjacent cell or current if already there */
-function stepToward(fx: number, fy: number, tx: number, ty: number): { x: number; y: number } {
-  if (fx === tx && fy === ty) return { x: fx, y: fy };
-  const dx = tx - fx, dy = ty - fy;
-  if (Math.abs(dx) >= Math.abs(dy)) return { x: fx + Math.sign(dx), y: fy };
-  return { x: fx, y: fy + Math.sign(dy) };
-}
-
-function getPhase(aliveCount: number, totalCount: number): { label: string; instruction: string } {
-  const pct = aliveCount / totalCount;
-  if (pct > 0.75) return {
-    label: 'EARLY GAME',
-    instruction: 'Explore and gather resources. Avoid unnecessary fights. Consider forming alliances.',
-  };
-  if (pct > 0.40) return {
-    label: 'MID GAME',
-    instruction: 'Consolidate resources. Pressure weak opponents. Decide whether to honour alliances or betray.',
-  };
-  if (pct > 0.20) return {
-    label: 'LATE GAME',
-    instruction: 'The end is near. Alliances are liabilities. Strike decisively or defend your position.',
-  };
-  return {
-    label: 'ENDGAME',
-    instruction: 'FINAL SURVIVORS. Trust no one. Kill or be killed. This is your last stand.',
-  };
-}
-
-// ─── AI Prompt ────────────────────────────────────────────────────────────────
-
-function buildPrompt(
-  fighter: any, tf: any,
-  visibleFighters: any[],
-  nearbyResources: string[],
-  currentTileType: string,
-  aliveCount: number,
-  totalCount: number,
-  hour: number,
-): string {
-  const allies: number[]    = JSON.parse(tf.alliances ?? '[]');
-  const inventory: string[] = JSON.parse(tf.inventory  ?? '[]');
-  const phase = getPhase(aliveCount, totalCount);
-  const isNight = hour % 24 >= 20 || hour % 24 < 6;
-
-  const enemies = visibleFighters
-    .filter(f => !allies.includes(n(f.fighterId)))
-    .map(f => `${f.name}#${n(f.fighterId)}(inj:${n(f.injury)}%,k:${n(f.kills)})`);
-  const alliesVis = visibleFighters
-    .filter(f => allies.includes(n(f.fighterId)))
-    .map(f => `${f.name}#${n(f.fighterId)}`);
-
-  const archetypeShort: Record<string, string> = {
-    AGGRESSIVE:'fight hard', STRATEGIC:'think first', COWARDLY:'avoid danger',
-    DIPLOMATIC:'build alliances', BETRAYER:'gain then betray trust', SURVIVALIST:'hoard resources',
-  };
-
-  return `${fighter.name} [${fighter.archetype}] Hr${hour} ${isNight?'🌙':'☀️'} ${phase.label} ${aliveCount}/${totalCount}alive
-Pos:(${n(tf.x)},${n(tf.y)}) Tile:${currentTileType} H:${n(tf.hunger)}% T:${n(tf.thirst)}% F:${n(tf.fatigue)}% Inj:${n(tf.injury)}%
-Inv:[${inventory.join(',') || 'none'}] Kills:${n(tf.kills)} Allies:${allies.length}
-Enemies:${enemies.join(' ')||'none'} | Allies:${alliesVis.join(' ')||'none'} | Loot:${nearbyResources.join(' ')||'none'}
-Directive:${archetypeShort[fighter.archetype]||'survive'}
-JSON only:{"action":"MOVE|REST|CONSUME|ATTACK|ALLY|BETRAY|HIDE","targetId":null,"targetX":null,"targetY":null,"itemType":null,"reasoning":"1 sentence"}`;}
-
-
-// ─── Get AI Decision ──────────────────────────────────────────────────────────
-
-async function getDecision(
-  fighter: any, tf: any,
-  visibleFighters: any[],
-  nearbyResources: string[],
-  nearbyTileTypes: string[],
-  currentTileType: string,
-  allTiles: any[],
-  aliveCount: number,
-  totalCount: number,
-  hour: number,
-  gridW: number,
-  gridH: number,
-): Promise<any> {
-  const base = { fighterId: n(tf.fighterId), targetId: null, targetX: null, targetY: null, itemType: null };
-  const inv: string[] = JSON.parse(tf.inventory ?? '[]');
-  const urgent = getUrgentNeed(tf);
-
-  // Skip Groq for obvious decisions — saves ~500 tokens per skipped call
-  if (urgent === 'REST') return { ...base, action: 'REST', reasoning: 'I must rest.' };
-  if (urgent && inv.includes(urgent)) return { ...base, action: 'CONSUME', itemType: urgent, reasoning: `Using ${urgent} now.` };
-
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      await groqLimiter.acquire();
-      const res = await groq.chat.completions.create({
-        model:       'llama-3.3-70b-versatile',
-        temperature: 0.75,
-        max_tokens:  80,
-        messages: [
-          { role: 'system', content: 'Battle royale AI. Reply ONLY with valid JSON, no markdown.' },
-          { role: 'user',   content: buildPrompt(fighter, tf, visibleFighters, nearbyResources, currentTileType, aliveCount, totalCount, hour) },
-        ],
-      });
-      const raw   = res.choices[0]?.message?.content ?? '{}';
-      const match = raw.replace(/```json|```/g, '').match(/\{[\s\S]*\}/);
-      if (!match) throw new Error('No JSON');
-      return { fighterId: n(tf.fighterId), ...JSON.parse(match[0]) };
-    } catch (err: any) {
-      if (attempt === 0) await sleep(1000);
-      else console.error(`  ❌ AI failed for ${fighter.name}:`, err?.message ?? err);
-    }
-  }
-
-  return smartFallback(tf, visibleFighters, allTiles, gridW, gridH);
-}
-
-function smartFallback(tf: any, visibleFighters: any[], allTiles: any[], gridW: number, gridH: number): any {
-  const base = { fighterId: n(tf.fighterId), targetId: null, targetX: null, targetY: null, itemType: null };
-  const inv: string[]  = JSON.parse(tf.inventory ?? '[]');
-  const urgent         = getUrgentNeed(tf);
-  const allies: number[] = JSON.parse(tf.alliances ?? '[]');
-
-  if (urgent === 'REST')                             return { ...base, action: 'REST',    reasoning: 'I must rest to survive.' };
-  if (urgent && inv.includes(urgent))                return { ...base, action: 'CONSUME', itemType: urgent, reasoning: `I consume ${urgent} before it is too late.` };
-
-  // Move toward closest urgently needed resource
-  const resourceTarget = urgent ? nearestResource(allTiles, n(tf.x), n(tf.y), urgent) : null;
-  if (resourceTarget) {
-    const step = stepToward(n(tf.x), n(tf.y), resourceTarget.x, resourceTarget.y);
-    return { ...base, action: 'MOVE', targetX: clamp(step.x, 0, gridW - 1), targetY: clamp(step.y, 0, gridH - 1), reasoning: `I head toward ${urgent} at (${resourceTarget.x},${resourceTarget.y}).` };
-  }
-
-  // No visible enemies near → explore
-  return { ...base, action: 'HIDE', reasoning: 'I lay low and observe.' };
-}
-
-// ─── Validate Decision ────────────────────────────────────────────────────────
-
-function clamp(v: number, min: number, max: number) { return Math.max(min, Math.min(max, v)); }
-
-function validateDecision(
-  d: any,
-  tf: any,
-  visibleFighters: any[],
-  inventory: string[],
-  gridW: number,
-  gridH: number,
-): any {
-  d = { ...d };
-
-  // Social actions need a valid visible target
-  if (['ATTACK', 'ALLY', 'BETRAY', 'NEGOTIATE', 'TRADE'].includes(d.action)) {
-    const valid = visibleFighters.some(f => n(f.fighterId) === n(d.targetId));
-    if (!valid) {
-      // Try to auto-select first visible enemy for ATTACK
-      if (d.action === 'ATTACK') {
-        const allies: number[] = JSON.parse(tf.alliances ?? '[]');
-        const enemy = visibleFighters.find(f => !allies.includes(n(f.fighterId)));
-        if (enemy) { d.targetId = n(enemy.fighterId); }
-        else { d.action = 'WORLD_EVENT'; d.targetId = null; d.reasoning = 'A wild predator attacks from the shadows.'; }
-      } else {
-        d.action = 'REST'; d.targetId = null;
-      }
-    }
-  }
-
-  // WORLD_EVENT doesn't need a targetId.
-  if (d.action === 'WORLD_EVENT') {
-     d.targetId = null;
-  }
-
-  // CONSUME: item must be in inventory
-  if (d.action === 'CONSUME') {
-    if (!d.itemType || !inventory.includes(d.itemType)) {
-      const useful = ['WATER', 'FOOD', 'MEDKIT'].find(i => inventory.includes(i));
-      if (useful) d.itemType = useful;
-      else { d.action = 'HIDE'; d.itemType = null; }
-    }
-  }
-
-  // MOVE: must be within 2 tiles and in bounds
-  if (d.action === 'MOVE') {
-    if (d.targetX == null || d.targetY == null) {
-      d.action = 'REST';
-    } else {
-      const tx = clamp(n(d.targetX), 0, gridW - 1);
-      const ty = clamp(n(d.targetY), 0, gridH - 1);
-      const dx = tx - n(tf.x), dy = ty - n(tf.y);
-      // Enforce up to 2 tiles distance
-      const dist = Math.min(2, Math.max(Math.abs(dx), Math.abs(dy)));
-      const adjX = clamp(n(tf.x) + Math.sign(dx) * Math.min(dist, Math.abs(dx)), 0, gridW - 1);
-      const adjY = clamp(n(tf.y) + Math.sign(dy) * Math.min(dist, Math.abs(dy)), 0, gridH - 1);
-      d.targetX = adjX; d.targetY = adjY;
-    }
-  }
-
-  return d;
-}
-
-// ─── Run One Hour ─────────────────────────────────────────────────────────────
 
 async function runHour(conn: DbConnection, tournamentId: number) {
   const tournament = [...conn.db.tournament.iter()].find(t => n(t.id) === tournamentId);
@@ -293,67 +32,49 @@ async function runHour(conn: DbConnection, tournamentId: number) {
 
   const allTiles = [...conn.db.arenaTile.iter()].filter(t => n(t.tournamentId) === tournamentId);
   const allFighters = [...conn.db.fighterTemplate.iter()];
-  const vision  = isNight ? 1 : 2;
+
+  // Pre-join fighter data
+  const fightersWithData = allTf.map(tf => ({
+    ...tf,
+    fighterData: allFighters.find(f => n(f.id) === n(tf.fighterId))
+  }));
+
+  const board_state = {
+    fighters: fightersWithData,
+    tiles: allTiles,
+    aliveCount: alive.length,
+    totalCount: total,
+    hour,
+    gridW,
+    gridH
+  };
 
   console.log(`\n[T${tournamentId}] Hour ${hour} (${isNight ? '🌙' : '☀️'}) — ${alive.length}/${total} alive`);
 
-  // Announce phase milestones
-  const phase = getPhase(alive.length, total);
-  if ([Math.floor(total * 0.5), Math.floor(total * 0.25), 3].includes(alive.length)) {
-    console.log(`  📢 ${phase.label} — ${phase.instruction}`);
+  try {
+    // Run LangGraph MAS
+    const result = await workflow.invoke({
+      tournamentId,
+      board_state,
+      recent_events: [] 
+    });
+
+    const decisionsMap = result.character_decisions || {};
+    const decisions: any[] = Object.values(decisionsMap);
+
+    console.log(`\n📢 Game Master Narrative:\n${result.global_narrative}\n`);
+    
+    for (const d of decisions) {
+        const fighter = allFighters.find(f => n(f.id) === n(d.fighterId));
+        console.log(`  [${fighter?.name || d.fighterId}] ${d.action} — "${d.reasoning ?? ''}"`);
+    }
+
+    console.log(`  → Advancing hour with ${decisions.length} decisions…`);
+    conn.reducers.advanceHour({ tournamentId, decisions: JSON.stringify(decisions) });
+    console.log(`  ✓ Hour ${hour} complete`);
+  } catch (err) {
+    console.error(`❌ LangGraph Orchestration failed for hour ${hour}:`, err);
   }
-
-  // Build tasks for parallel AI execution
-  const tasks = alive.map(tf => async () => {
-    const fighter = allFighters.find(f => n(f.id) === n(tf.fighterId));
-    if (!fighter) return null;
-
-    const visibleTfs = alive.filter(other =>
-      n(other.fighterId) !== n(tf.fighterId) &&
-      Math.abs(n(other.x) - n(tf.x)) <= vision &&
-      Math.abs(n(other.y) - n(tf.y)) <= vision
-    );
-    const visibleFighters = visibleTfs.map(vtf => ({
-      ...vtf,
-      name: allFighters.find(f => n(f.id) === n(vtf.fighterId))?.name ?? `#${n(vtf.fighterId)}`,
-    }));
-
-    const nearbyTiles = allTiles.filter(t =>
-      Math.abs(n(t.x) - n(tf.x)) <= 2 && Math.abs(n(t.y) - n(tf.y)) <= 2
-    );
-    const nearbyResources = nearbyTiles
-      .filter(t => t.hasResource && t.resourceType)
-      .map(t => `${t.resourceType}@(${n(t.x)},${n(t.y)})`);
-    const nearbyTileTypes = [...new Set(nearbyTiles.map(t => t.tileType as string))];
-    const currentTile = getTileAt(allTiles, n(tf.x), n(tf.y));
-    const currentTileType = currentTile?.tileType ?? 'PLAIN';
-
-    let decision = await getDecision(
-      fighter, tf, visibleFighters, nearbyResources, nearbyTileTypes, // nearbyTileTypes kept for compat
-      currentTileType, allTiles, alive.length, total, hour, gridW, gridH,
-    );
-    const inventory: string[] = JSON.parse(tf.inventory ?? '[]');
-    decision = validateDecision(decision, tf, visibleFighters, inventory, gridW, gridH);
-
-    // Console log with reasoning for entertainment
-    const actionStr =
-      decision.action === 'MOVE'    ? `MOVE→(${decision.targetX},${decision.targetY})` :
-      decision.action === 'ATTACK'  ? `ATTACK→${visibleFighters.find(f => n(f.fighterId) === n(decision.targetId))?.name ?? decision.targetId}` :
-      decision.action === 'ALLY'    ? `ALLY→${visibleFighters.find(f => n(f.fighterId) === n(decision.targetId))?.name ?? decision.targetId}` :
-      decision.action === 'BETRAY'  ? `💀BETRAY→${visibleFighters.find(f => n(f.fighterId) === n(decision.targetId))?.name ?? decision.targetId}` :
-      decision.action === 'CONSUME' ? `CONSUME ${decision.itemType}` :
-      decision.action;
-    console.log(`  [${fighter.name}] ${actionStr} — "${decision.reasoning ?? ''}"`);
-
-    return decision;
-  });
-
-  const results = await pooled(tasks, AI_CONCURRENCY);
-  const decisions = results.filter(Boolean);
-
-  console.log(`  → Advancing hour with ${decisions.length} decisions…`);
-  conn.reducers.advanceHour({ tournamentId, decisions: JSON.stringify(decisions) });
-  console.log(`  ✓ Hour ${hour} complete`);
 }
 
 // ─── Orchestration Loop ───────────────────────────────────────────────────────
@@ -417,7 +138,7 @@ function startLoop(conn: DbConnection) {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
-  console.log('🎮 BloodBets Orchestrator v3 — AI Arena Edition');
+  console.log('🎮 BloodBets Orchestrator v4 — LangGraph Edition');
 
   DbConnection.builder()
     .withUri(SPACETIME_URI)
